@@ -148,12 +148,37 @@ async function parseFile(filepath) {
       // Skip rows with no description and no code
       if (!record.description && !record.code) return;
 
+      // Pick the best code across all code slots (code|1 through code|4).
+      // Prefer CPT/HCPCS > MS-DRG/APR-DRG > RC > CDM.
+      // BSW puts codes in varying positions — CPT might be in code|2 or code|3.
+      const codeSlots = [
+        { code: record.code, type: record.code_type },
+        { code: record.rev_code, type: record.rev_code_type },
+        { code: record.hcpcs_code, type: record.hcpcs_code_type },
+      ].filter(s => s.code && s.type);
+
+      const priority = { CPT: 1, HCPCS: 1, 'MS-DRG': 2, 'APR-DRG': 2, 'TRIS-DRG': 2, RC: 3, CDM: 4 };
+      codeSlots.sort((a, b) => (priority[a.type?.toUpperCase()] || 5) - (priority[b.type?.toUpperCase()] || 5));
+
+      let code = record.code;
+      let codeType = record.code_type;
+      let revCode = record.rev_code;
+
+      if (codeSlots.length > 0) {
+        const best = codeSlots[0];
+        code = best.code;
+        codeType = best.type?.toUpperCase();
+        // Find an RC code for rev_code if it's not the primary
+        const rcSlot = codeSlots.find(s => s.type?.toUpperCase() === 'RC' && s.code !== code);
+        revCode = rcSlot?.code || (record.code_type?.toUpperCase() === 'RC' ? record.code : record.rev_code);
+      }
+
       // Parse numeric fields
       const parsed = {
         description: record.description,
-        code: record.code,
-        code_type: record.code_type,
-        rev_code: record.rev_code,
+        code,
+        code_type: codeType,
+        rev_code: revCode,
         modifiers: record.modifiers || null,
         setting: record.setting || null,
         gross_charge: parsePrice(record.gross_charge),
