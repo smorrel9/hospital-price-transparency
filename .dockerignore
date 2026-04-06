@@ -1,0 +1,8 @@
+node_modules
+data/
+dist/
+.git
+*.md
+*.pdf
+files/
+files.zip

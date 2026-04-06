@@ -24,6 +24,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// In production, serve the Vite-built frontend as static files
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '..', 'dist')));
+}
+
 /**
  * Flag rows where prices are per-unit multipliers rather than real dollar amounts.
  * Pattern: CDM codes with gross_charge <= 1.0 use percentage-based pricing where
@@ -274,6 +279,13 @@ app.get('/api/stats', (req, res) => {
     settings: settingCounts,
   });
 });
+
+// SPA catchall: serve index.html for any non-API route in production
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Hospital Price Transparency API running on http://localhost:${PORT}`);

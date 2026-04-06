@@ -6,6 +6,8 @@ import PriceCard from './PriceCard';
 const HOSPITAL_NAMES = {
   'ascension-seton-austin': 'Ascension Seton Medical Center Austin',
   'dell-seton-austin': 'Dell Seton Medical Center at UT Austin',
+  'bsw-austin': 'Baylor Scott & White Medical Center Austin',
+  'st-davids-austin': "St. David's Medical Center Austin",
 };
 
 export default function App() {

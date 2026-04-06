@@ -57,9 +57,10 @@ export default function ResultsTable({ results, query, loading, onSelectCode, ho
 
   function shortName(hospitalId) {
     const full = hospitalNames[hospitalId] || hospitalId;
-    // Shorten for table display
     if (full.includes('Dell Seton')) return 'Dell Seton';
     if (full.includes('Ascension Seton')) return 'Ascension Seton';
+    if (full.includes('Baylor')) return 'BSW Austin';
+    if (full.includes("David's")) return "St. David's";
     return full;
   }
 

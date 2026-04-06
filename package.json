@@ -11,6 +11,7 @@
     "build": "vite build",
     "fetch-data": "node scripts/fetch-data.js",
     "parse-data": "node scripts/parse-csv.js",
+    "parse-json": "node scripts/parse-json.js",
     "seed-db": "node scripts/seed-db.js",
     "build-names": "node scripts/build-friendly-names.js",
     "setup": "npm run fetch-data && npm run parse-data && npm run seed-db && npm run build-names"
@@ -29,7 +30,8 @@
     "cors": "^2.8.5",
     "csv-parse": "^5.5.0",
     "dotenv": "^16.4.0",
-    "express": "^4.18.0"
+    "express": "^4.18.0",
+    "stream-json": "^2.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",

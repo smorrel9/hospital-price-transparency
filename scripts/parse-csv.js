@@ -33,6 +33,11 @@ const COLUMN_MAP = {
   'code|1|type': 'code_type',
   'code|2': 'rev_code',
   'code|2|type': 'rev_code_type',
+  'code|3': 'hcpcs_code',       // BSW: cross-reference HCPCS code
+  'code|3|type': 'hcpcs_code_type',
+  'code|4': 'ndc_code',         // BSW: NDC drug code
+  'code|4|type': 'ndc_code_type',
+  'billing_class': 'billing_class', // BSW uses this alongside setting
   'modifiers': 'modifiers',
   'setting': 'setting',
   'drug_unit_of_measurement': 'drug_unit',
@@ -96,6 +101,7 @@ async function parseFile(filepath) {
         relax_column_count: true,
         skip_empty_lines: true,
         trim: true,
+        bom: true,
       }));
 
     csvParser.on('data', (row) => {
