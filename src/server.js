@@ -280,6 +280,145 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+/**
+ * GET /api/autocomplete
+ * Suggest procedures by searching friendly_names via FTS5 + LIKE fallback.
+ *
+ * Query params:
+ *   q     - search term (required)
+ *   limit - max results (default 10)
+ */
+app.get('/api/autocomplete', (req, res) => {
+  const { q, limit = 10 } = req.query;
+
+  if (!q || q.trim().length === 0) {
+    return res.status(400).json({ error: 'Search query "q" is required' });
+  }
+
+  try {
+    const maxResults = Number(limit);
+    const seen = new Map(); // code -> row, for deduplication
+
+    // 1. FTS5 prefix search
+    const ftsTokens = q
+      .replace(/[-:^~*"]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 0);
+
+    if (ftsTokens.length > 0) {
+      const ftsQuery = ftsTokens.map(w => `"${w}"*`).join(' ');
+      try {
+        const ftsRows = db.prepare(`
+          SELECT fn.code, fn.code_type, fn.friendly_name, fn.original_description
+          FROM friendly_names_fts fts
+          JOIN friendly_names fn ON fn.code = fts.code
+          WHERE friendly_names_fts MATCH ?
+          LIMIT ?
+        `).all(ftsQuery, maxResults * 3);
+
+        for (const row of ftsRows) {
+          if (!seen.has(row.code)) seen.set(row.code, row);
+        }
+      } catch {}
+    }
+
+    // 2. LIKE fallback if we don't have enough results
+    if (seen.size < maxResults) {
+      const likePattern = `%${q.trim()}%`;
+      const likeRows = db.prepare(`
+        SELECT code, code_type, friendly_name, original_description
+        FROM friendly_names
+        WHERE friendly_name LIKE ? OR original_description LIKE ? OR search_terms LIKE ?
+        LIMIT ?
+      `).all(likePattern, likePattern, likePattern, maxResults * 3);
+
+      for (const row of likeRows) {
+        if (!seen.has(row.code)) seen.set(row.code, row);
+      }
+    }
+
+    const suggestions = Array.from(seen.values()).slice(0, maxResults).map(r => ({
+      code: r.code,
+      code_type: r.code_type,
+      friendly_name: r.friendly_name,
+      original_description: r.original_description,
+    }));
+
+    res.json({ suggestions });
+  } catch (err) {
+    console.error('Autocomplete error:', err.message);
+    res.status(500).json({ error: 'Autocomplete failed', detail: err.message });
+  }
+});
+
+/**
+ * Build payer categories at startup (cached — the 36M row DISTINCT is slow).
+ */
+let _payerCategoriesCache = null;
+function buildPayerCategories() {
+  if (_payerCategoriesCache) return _payerCategoriesCache;
+
+  console.log('Building payer categories cache...');
+  const rows = db.prepare(`
+    SELECT DISTINCT payer_name, hospital_id
+    FROM procedures
+    WHERE payer_name IS NOT NULL
+  `).all();
+
+  const categoryPatterns = [
+    { category: 'BCBS',      test: n => /BCBS|Blue\s*Cross|BLUE/i.test(n) },
+    { category: 'Aetna',     test: n => /AETNA|Aetna/i.test(n) },
+    { category: 'United',    test: n => /UNITED|UHC|Uhc/i.test(n) },
+    { category: 'Cigna',     test: n => /CIGNA|Cigna/i.test(n) },
+    { category: 'Humana',    test: n => /HUMANA|Humana/i.test(n) },
+    { category: 'Medicare',  test: n => /MEDICARE|Medicare/i.test(n) },
+    { category: 'Medicaid',  test: n => /MEDICAID|Medicaid|STAR|CHIP/i.test(n) },
+  ];
+
+  const groups = {};
+  for (const { payer_name, hospital_id } of rows) {
+    let matched = false;
+    for (const { category, test } of categoryPatterns) {
+      if (test(payer_name)) {
+        if (!groups[category]) groups[category] = {};
+        if (!groups[category][payer_name]) groups[category][payer_name] = new Set();
+        groups[category][payer_name].add(hospital_id);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      if (!groups['Other']) groups['Other'] = {};
+      if (!groups['Other'][payer_name]) groups['Other'][payer_name] = new Set();
+      groups['Other'][payer_name].add(hospital_id);
+    }
+  }
+
+  _payerCategoriesCache = Object.entries(groups).map(([category, payers]) => ({
+    category,
+    payers: Object.entries(payers).map(([payer_name, hospitalSet]) => ({
+      payer_name,
+      hospital_ids: Array.from(hospitalSet),
+    })),
+  }));
+
+  console.log(`  ${_payerCategoriesCache.length} categories, ${rows.length} payer/hospital combos`);
+  return _payerCategoriesCache;
+}
+
+/**
+ * GET /api/payer-categories
+ * Return payer names grouped into broad insurance categories.
+ */
+app.get('/api/payer-categories', (req, res) => {
+  try {
+    res.json({ categories: buildPayerCategories() });
+  } catch (err) {
+    console.error('Payer categories error:', err.message);
+    res.status(500).json({ error: 'Failed to load payer categories', detail: err.message });
+  }
+});
+
 // SPA catchall: serve index.html for any non-API route in production
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
@@ -290,4 +429,6 @@ if (process.env.NODE_ENV === 'production') {
 app.listen(PORT, () => {
   console.log(`Hospital Price Transparency API running on http://localhost:${PORT}`);
   console.log(`Database: ${DB_PATH}`);
+  // Pre-build the payer categories cache
+  buildPayerCategories();
 });
