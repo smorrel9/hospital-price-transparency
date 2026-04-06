@@ -35,6 +35,7 @@ export default function ResultsTable({ results, query, loading, onSelectCode, ho
         code: r.code,
         code_type: r.code_type,
         description: r.description,
+        friendly_name: r.friendly_name,
         setting: r.setting,
         hospital_id: r.hospital_id,
         cash_price: r.cash_price,
@@ -91,14 +92,17 @@ export default function ResultsTable({ results, query, loading, onSelectCode, ho
               >
                 <td className="py-3 pr-4">
                   <div className="font-medium text-gray-900">
-                    {row.description}
+                    {row.friendly_name || row.description}
                     {row.is_percentage_based && (
                       <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-normal">
                         % based
                       </span>
                     )}
                   </div>
-                  {row.sampleRate && !row.is_percentage_based && (
+                  {row.friendly_name && row.friendly_name !== row.description && (
+                    <div className="text-xs text-gray-400 mt-0.5">{row.description}</div>
+                  )}
+                  {row.sampleRate && !row.is_percentage_based && !row.friendly_name && (
                     <div className="text-xs text-gray-400 mt-0.5">
                       e.g. {formatPayer(row.samplePayer)}: {formatPrice(row.sampleRate)}{' '}
                       ({formatMethodology(row.sampleMethodology)})

@@ -69,7 +69,12 @@ export default function PriceCard({ code, onBack, hospitalNames }) {
       )}
 
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-        <h2 className="text-xl font-bold text-gray-900">{data.description}</h2>
+        <h2 className="text-xl font-bold text-gray-900">
+          {data.friendly_name || data.description}
+        </h2>
+        {data.friendly_name && data.friendly_name !== data.description && (
+          <div className="text-sm text-gray-500 mt-1">{data.description}</div>
+        )}
         <div className="flex gap-4 mt-2 text-sm text-gray-500">
           <span>Code: <span className="font-mono">{data.code}</span></span>
           {data.setting && <span>Setting: {data.setting}</span>}

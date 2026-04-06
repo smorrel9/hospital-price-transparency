@@ -47,6 +47,21 @@ try {
 }
 
 /**
+ * Sanitize a user query for FTS5 MATCH.
+ * - Remove special FTS operators (-, :, ^, *, ~)
+ * - Replace hyphens with spaces so "x-ray" becomes "x ray"
+ * - Wrap each word in double quotes for exact token matching
+ */
+function sanitizeFts(q) {
+  return q
+    .replace(/[-:^~*"]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 0)
+    .map(w => `"${w}"`)
+    .join(' ');
+}
+
+/**
  * GET /api/search
  * Full-text search across procedure descriptions and codes.
  *
@@ -65,38 +80,78 @@ app.get('/api/search', (req, res) => {
   }
 
   try {
+    // First, find CPT/HCPCS codes whose friendly names match the query
+    // This lets "brain MRI" or "knee replacement" find the right codes
+    const ftsQuery = sanitizeFts(q);
+    let matchedCodes = [];
+    if (ftsQuery.length > 0) {
+      try {
+        matchedCodes = db.prepare(
+          `SELECT code FROM friendly_names_fts WHERE friendly_names_fts MATCH ? LIMIT 50`
+        ).all(ftsQuery).map(r => r.code);
+      } catch {}
+    }
+
     let query;
     let params;
 
+    const filters = [];
+    const filterParams = [];
+    if (hospital) { filters.push('AND p.hospital_id = ?'); filterParams.push(hospital); }
+    if (setting) { filters.push('AND p.setting = ?'); filterParams.push(setting.toUpperCase()); }
+    if (payer) { filters.push('AND p.payer_name LIKE ?'); filterParams.push(`%${payer}%`); }
+    const filterClause = filters.join(' ');
+
     if (q.trim().length >= 3) {
-      query = `
-        SELECT p.*
-        FROM procedures p
-        JOIN procedures_fts fts ON p.id = fts.rowid
-        WHERE procedures_fts MATCH ?
-        ${hospital ? 'AND p.hospital_id = ?' : ''}
-        ${setting ? 'AND p.setting = ?' : ''}
-        ${payer ? 'AND p.payer_name LIKE ?' : ''}
-        ORDER BY rank
-        LIMIT ? OFFSET ?
-      `;
-      params = [q.trim()];
+      if (matchedCodes.length > 0) {
+        // Friendly-name matches first (CPT/HCPCS with readable names),
+        // then FTS text matches on raw descriptions
+        query = `
+          SELECT * FROM (
+            SELECT p.*, fn.friendly_name, 1 as source_rank
+            FROM procedures p
+            LEFT JOIN friendly_names fn ON p.code = fn.code
+            WHERE p.code IN (${matchedCodes.map(() => '?').join(',')})
+            ${filterClause}
+            UNION ALL
+            SELECT p.*, fn.friendly_name, 2 as source_rank
+            FROM procedures p
+            JOIN procedures_fts fts ON p.id = fts.rowid
+            LEFT JOIN friendly_names fn ON p.code = fn.code
+            WHERE procedures_fts MATCH ?
+            AND p.code NOT IN (${matchedCodes.map(() => '?').join(',')})
+            ${filterClause}
+          ) ORDER BY source_rank LIMIT ? OFFSET ?
+        `;
+        params = [
+          ...matchedCodes, ...filterParams,
+          ftsQuery, ...matchedCodes, ...filterParams,
+        ];
+      } else {
+        query = `
+          SELECT p.*, fn.friendly_name
+          FROM procedures p
+          JOIN procedures_fts fts ON p.id = fts.rowid
+          LEFT JOIN friendly_names fn ON p.code = fn.code
+          WHERE procedures_fts MATCH ?
+          ${filterClause}
+          ORDER BY rank
+          LIMIT ? OFFSET ?
+        `;
+        params = [ftsQuery, ...filterParams];
+      }
     } else {
       query = `
-        SELECT p.*
+        SELECT p.*, fn.friendly_name
         FROM procedures p
+        LEFT JOIN friendly_names fn ON p.code = fn.code
         WHERE (p.description LIKE ? OR p.code LIKE ?)
-        ${hospital ? 'AND p.hospital_id = ?' : ''}
-        ${setting ? 'AND p.setting = ?' : ''}
-        ${payer ? 'AND p.payer_name LIKE ?' : ''}
+        ${filterClause}
         LIMIT ? OFFSET ?
       `;
-      params = [`%${q.trim()}%`, `%${q.trim()}%`];
+      params = [`%${q.trim()}%`, `%${q.trim()}%`, ...filterParams];
     }
 
-    if (hospital) params.push(hospital);
-    if (setting) params.push(setting.toUpperCase());
-    if (payer) params.push(`%${payer}%`);
     params.push(Number(limit), Number(offset));
 
     const results = flagResults(db.prepare(query).all(...params));
@@ -122,10 +177,12 @@ app.get('/api/procedure/:code', (req, res) => {
   const { setting } = req.query;
 
   let query = `
-    SELECT * FROM procedures
-    WHERE code = ?
-    ${setting ? 'AND setting = ?' : ''}
-    ORDER BY payer_name, plan_name
+    SELECT p.*, fn.friendly_name
+    FROM procedures p
+    LEFT JOIN friendly_names fn ON p.code = fn.code
+    WHERE p.code = ?
+    ${setting ? 'AND p.setting = ?' : ''}
+    ORDER BY p.payer_name, p.plan_name
   `;
   const params = [code];
   if (setting) params.push(setting.toUpperCase());
@@ -149,6 +206,7 @@ app.get('/api/procedure/:code', (req, res) => {
   res.json({
     code,
     description: results[0].description,
+    friendly_name: results[0].friendly_name || null,
     setting: results[0].setting,
     gross_charge: results[0].gross_charge,
     cash_price: results[0].cash_price,
