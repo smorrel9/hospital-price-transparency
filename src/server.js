@@ -24,6 +24,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+/**
+ * Flag rows where prices are per-unit multipliers rather than real dollar amounts.
+ * Pattern: CDM codes with gross_charge <= 1.0 use percentage-based pricing where
+ * the "dollar" values are actually multipliers of a base charge.
+ */
+function flagResults(rows) {
+  return rows.map(row => ({
+    ...row,
+    is_percentage_based: row.code_type === 'CDM' && row.gross_charge != null && row.gross_charge <= 1.0,
+  }));
+}
+
 let db;
 try {
   db = new Database(DB_PATH, { readonly: true });
@@ -84,7 +96,7 @@ app.get('/api/search', (req, res) => {
     if (payer) params.push(`%${payer}%`);
     params.push(Number(limit), Number(offset));
 
-    const results = db.prepare(query).all(...params);
+    const results = flagResults(db.prepare(query).all(...params));
 
     res.json({
       query: q,
@@ -115,7 +127,7 @@ app.get('/api/procedure/:code', (req, res) => {
   const params = [code];
   if (setting) params.push(setting.toUpperCase());
 
-  const results = db.prepare(query).all(...params);
+  const results = flagResults(db.prepare(query).all(...params));
 
   if (results.length === 0) {
     return res.status(404).json({ error: `No pricing found for code: ${code}` });
@@ -129,6 +141,8 @@ app.get('/api/procedure/:code', (req, res) => {
     grouped[key].push(row);
   }
 
+  const anyPercentageBased = results.some(r => r.is_percentage_based);
+
   res.json({
     code,
     description: results[0].description,
@@ -137,6 +151,7 @@ app.get('/api/procedure/:code', (req, res) => {
     cash_price: results[0].cash_price,
     min_negotiated: results[0].min_negotiated,
     max_negotiated: results[0].max_negotiated,
+    is_percentage_based: anyPercentageBased,
     payers: grouped,
   });
 });
@@ -187,15 +202,15 @@ app.get('/api/stats', (req, res) => {
   const total = db.prepare('SELECT COUNT(*) as count FROM procedures').get();
   const payers = db.prepare('SELECT COUNT(DISTINCT payer_name) as count FROM procedures WHERE payer_name IS NOT NULL').get();
   const codes = db.prepare('SELECT COUNT(DISTINCT code) as count FROM procedures WHERE code IS NOT NULL').get();
-  const inpatient = db.prepare("SELECT COUNT(*) as count FROM procedures WHERE setting = 'INPATIENT'").get();
-  const outpatient = db.prepare("SELECT COUNT(*) as count FROM procedures WHERE setting = 'OUTPATIENT'").get();
+  const settings = db.prepare("SELECT setting, COUNT(*) as count FROM procedures GROUP BY setting").all();
+  const settingCounts = {};
+  for (const s of settings) settingCounts[s.setting || 'UNKNOWN'] = s.count;
 
   res.json({
     total_records: total.count,
     payers: payers.count,
     unique_codes: codes.count,
-    inpatient_records: inpatient.count,
-    outpatient_records: outpatient.count,
+    settings: settingCounts,
   });
 });
 

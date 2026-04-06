@@ -29,6 +29,7 @@ export default function SearchBar({ onSearch, loading }) {
         <option value="">All settings</option>
         <option value="INPATIENT">Inpatient</option>
         <option value="OUTPATIENT">Outpatient</option>
+        <option value="BOTH">Both (IP + OP)</option>
       </select>
 
       <button

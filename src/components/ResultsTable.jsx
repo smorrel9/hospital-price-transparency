@@ -44,6 +44,7 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
         samplePayer: r.payer_name,
         sampleRate: r.negotiated_rate,
         sampleMethodology: r.methodology,
+        is_percentage_based: r.is_percentage_based,
         count: 1,
       });
     } else {
@@ -80,11 +81,23 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
                 className="border-b border-gray-100 hover:bg-gray-50"
               >
                 <td className="py-3 pr-4">
-                  <div className="font-medium text-gray-900">{row.description}</div>
-                  {row.sampleRate && (
+                  <div className="font-medium text-gray-900">
+                    {row.description}
+                    {row.is_percentage_based && (
+                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-normal">
+                        % based
+                      </span>
+                    )}
+                  </div>
+                  {row.sampleRate && !row.is_percentage_based && (
                     <div className="text-xs text-gray-400 mt-0.5">
                       e.g. {formatPayer(row.samplePayer)}: {formatPrice(row.sampleRate)}{' '}
                       ({formatMethodology(row.sampleMethodology)})
+                    </div>
+                  )}
+                  {row.is_percentage_based && (
+                    <div className="text-xs text-amber-600 mt-0.5">
+                      Prices are % of total charges, not fixed dollar amounts
                     </div>
                   )}
                 </td>
@@ -98,9 +111,11 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     row.setting === 'INPATIENT'
                       ? 'bg-purple-50 text-purple-700'
+                      : row.setting === 'BOTH'
+                      ? 'bg-blue-50 text-blue-700'
                       : 'bg-green-50 text-green-700'
                   }`}>
-                    {row.setting === 'INPATIENT' ? 'Inpatient' : 'Outpatient'}
+                    {row.setting === 'INPATIENT' ? 'Inpatient' : row.setting === 'BOTH' ? 'Both' : 'Outpatient'}
                   </span>
                 </td>
                 <td className="py-3 pr-4 text-right font-mono">

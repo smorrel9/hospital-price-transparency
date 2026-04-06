@@ -47,6 +47,15 @@ export default function PriceCard({ code, onBack }) {
         &larr; Back to results
       </button>
 
+      {data.is_percentage_based && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4 text-sm text-amber-800">
+          <span className="font-medium">Note:</span> This item uses percentage-based pricing.
+          The dollar amounts shown are calculated as a percentage of total billed charges
+          and may not reflect the actual cost you'd pay. The final price depends on the
+          total charges for your visit.
+        </div>
+      )}
+
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
         <h2 className="text-xl font-bold text-gray-900">{data.description}</h2>
         <div className="flex gap-4 mt-2 text-sm text-gray-500">
@@ -86,8 +95,9 @@ export default function PriceCard({ code, onBack }) {
               </div>
               <div className="text-right">
                 {rate.negotiated_rate ? (
-                  <span className="text-lg font-semibold text-gray-900">
+                  <span className={`text-lg font-semibold ${rate.is_percentage_based ? 'text-amber-700' : 'text-gray-900'}`}>
                     {formatPrice(rate.negotiated_rate)}
+                    {rate.is_percentage_based && <span className="text-xs font-normal text-amber-600 ml-1">*</span>}
                   </span>
                 ) : rate.negotiated_percentage ? (
                   <span className="text-lg font-semibold text-gray-900">
