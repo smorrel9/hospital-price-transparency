@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import SearchBar from './SearchBar';
 import ResultsTable from './ResultsTable';
 import PriceCard from './PriceCard';
+
+const HOSPITAL_NAMES = {
+  'ascension-seton-austin': 'Ascension Seton Medical Center Austin',
+  'dell-seton-austin': 'Dell Seton Medical Center at UT Austin',
+};
 
 export default function App() {
   const [results, setResults] = useState([]);
@@ -9,16 +14,25 @@ export default function App() {
   const [error, setError] = useState(null);
   const [selectedCode, setSelectedCode] = useState(null);
   const [query, setQuery] = useState('');
+  const [hospitals, setHospitals] = useState([]);
 
-  async function handleSearch(q, setting) {
+  useEffect(() => {
+    fetch('/api/hospitals')
+      .then(r => r.json())
+      .then(data => setHospitals(data.hospitals))
+      .catch(() => {});
+  }, []);
+
+  async function handleSearch(q, setting, hospital) {
     setQuery(q);
     setSelectedCode(null);
     setError(null);
     setLoading(true);
 
     try {
-      const params = new URLSearchParams({ q, limit: 100 });
+      const params = new URLSearchParams({ q, limit: 200 });
       if (setting) params.set('setting', setting);
+      if (hospital) params.set('hospital', hospital);
       const res = await fetch(`/api/search?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
@@ -31,6 +45,11 @@ export default function App() {
     }
   }
 
+  const hospitalCount = hospitals.length;
+  const subtitle = hospitalCount > 1
+    ? `${hospitalCount} Austin-area hospitals — CMS price transparency data`
+    : 'Ascension Seton Medical Center Austin — CMS price transparency data';
+
   return (
     <div className="min-h-screen">
       <header className="bg-white border-b border-gray-200">
@@ -38,14 +57,17 @@ export default function App() {
           <h1 className="text-2xl font-bold text-gray-900">
             Hospital Price Lookup
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Ascension Seton Medical Center Austin — CMS price transparency data
-          </p>
+          <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        <SearchBar onSearch={handleSearch} loading={loading} />
+        <SearchBar
+          onSearch={handleSearch}
+          loading={loading}
+          hospitals={hospitals}
+          hospitalNames={HOSPITAL_NAMES}
+        />
 
         {error && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
@@ -54,13 +76,19 @@ export default function App() {
         )}
 
         {selectedCode ? (
-          <PriceCard code={selectedCode} onBack={() => setSelectedCode(null)} />
+          <PriceCard
+            code={selectedCode}
+            onBack={() => setSelectedCode(null)}
+            hospitalNames={HOSPITAL_NAMES}
+          />
         ) : (
           <ResultsTable
             results={results}
             query={query}
             loading={loading}
             onSelectCode={setSelectedCode}
+            hospitalNames={HOSPITAL_NAMES}
+            showHospital={hospitals.length > 1}
           />
         )}
       </main>

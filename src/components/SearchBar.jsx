@@ -1,12 +1,13 @@
 import { useState } from 'react';
 
-export default function SearchBar({ onSearch, loading }) {
+export default function SearchBar({ onSearch, loading, hospitals, hospitalNames }) {
   const [query, setQuery] = useState('');
   const [setting, setSetting] = useState('');
+  const [hospital, setHospital] = useState('');
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (query.trim()) onSearch(query.trim(), setting);
+    if (query.trim()) onSearch(query.trim(), setting, hospital);
   }
 
   return (
@@ -20,6 +21,21 @@ export default function SearchBar({ onSearch, loading }) {
           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
         />
       </div>
+
+      {hospitals.length > 1 && (
+        <select
+          value={hospital}
+          onChange={(e) => setHospital(e.target.value)}
+          className="px-3 py-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All hospitals</option>
+          {hospitals.map(h => (
+            <option key={h.hospital_id} value={h.hospital_id}>
+              {hospitalNames[h.hospital_id] || h.hospital_id}
+            </option>
+          ))}
+        </select>
+      )}
 
       <select
         value={setting}

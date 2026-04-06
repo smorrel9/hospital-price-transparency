@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { formatPrice, formatPayer, formatPlan, formatMethodology } from '../utils/format';
 
-export default function PriceCard({ code, onBack }) {
+export default function PriceCard({ code, onBack, hospitalNames }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -36,7 +36,19 @@ export default function PriceCard({ code, onBack }) {
     );
   }
 
-  const payers = Object.entries(data.payers);
+  // Group rates by hospital, then by payer within each hospital
+  const byHospital = {};
+  for (const [payerName, rates] of Object.entries(data.payers)) {
+    for (const rate of rates) {
+      const hid = rate.hospital_id || 'unknown';
+      if (!byHospital[hid]) byHospital[hid] = {};
+      if (!byHospital[hid][payerName]) byHospital[hid][payerName] = [];
+      byHospital[hid][payerName].push(rate);
+    }
+  }
+
+  const hospitalIds = Object.keys(byHospital);
+  const multiHospital = hospitalIds.length > 1;
 
   return (
     <div className="mt-6">
@@ -71,49 +83,66 @@ export default function PriceCard({ code, onBack }) {
         </div>
       </div>
 
-      <h3 className="text-sm font-medium text-gray-500 mb-3">
-        Payer comparison ({payers.length} payers)
-      </h3>
+      {hospitalIds.map(hid => {
+        const payers = Object.entries(byHospital[hid]);
+        const hname = hospitalNames[hid] || hid;
 
-      <div className="space-y-2">
-        {payers.map(([payerName, rates]) => {
-          // Show first rate per payer (typically one plan per payer in results)
-          const rate = rates[0];
-          return (
-            <div
-              key={payerName + rate.plan_name}
-              className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center justify-between"
-            >
-              <div>
-                <div className="font-medium text-sm text-gray-900">
-                  {formatPayer(payerName)}
-                </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {formatPlan(rate.plan_name)}
-                  {rate.methodology && ` \u00B7 ${formatMethodology(rate.methodology)}`}
-                </div>
-              </div>
-              <div className="text-right">
-                {rate.negotiated_rate ? (
-                  <span className={`text-lg font-semibold ${rate.is_percentage_based ? 'text-amber-700' : 'text-gray-900'}`}>
-                    {formatPrice(rate.negotiated_rate)}
-                    {rate.is_percentage_based && <span className="text-xs font-normal text-amber-600 ml-1">*</span>}
-                  </span>
-                ) : rate.negotiated_percentage ? (
-                  <span className="text-lg font-semibold text-gray-900">
-                    {rate.negotiated_percentage}%
-                  </span>
-                ) : (
-                  <span className="text-sm text-gray-400">N/A</span>
-                )}
-                {rates.length > 1 && (
-                  <div className="text-xs text-gray-400">{rates.length} plans</div>
-                )}
-              </div>
+        return (
+          <div key={hid} className="mb-6">
+            {multiHospital && (
+              <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                {hname}
+                <span className="text-gray-400 font-normal">({payers.length} payers)</span>
+              </h3>
+            )}
+            {!multiHospital && (
+              <h3 className="text-sm font-medium text-gray-500 mb-3">
+                Payer comparison ({payers.length} payers)
+              </h3>
+            )}
+
+            <div className="space-y-2">
+              {payers.map(([payerName, rates]) => {
+                const rate = rates[0];
+                return (
+                  <div
+                    key={hid + payerName + rate.plan_name}
+                    className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-medium text-sm text-gray-900">
+                        {formatPayer(payerName)}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {formatPlan(rate.plan_name)}
+                        {rate.methodology && ` \u00B7 ${formatMethodology(rate.methodology)}`}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {rate.negotiated_rate ? (
+                        <span className={`text-lg font-semibold ${rate.is_percentage_based ? 'text-amber-700' : 'text-gray-900'}`}>
+                          {formatPrice(rate.negotiated_rate)}
+                          {rate.is_percentage_based && <span className="text-xs font-normal text-amber-600 ml-1">*</span>}
+                        </span>
+                      ) : rate.negotiated_percentage ? (
+                        <span className="text-lg font-semibold text-gray-900">
+                          {rate.negotiated_percentage}%
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">N/A</span>
+                      )}
+                      {rates.length > 1 && (
+                        <div className="text-xs text-gray-400">{rates.length} plans</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

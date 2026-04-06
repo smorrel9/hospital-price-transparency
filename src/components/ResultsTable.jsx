@@ -1,6 +1,6 @@
 import { formatPrice, formatPayer, formatMethodology } from '../utils/format';
 
-export default function ResultsTable({ results, query, loading, onSelectCode }) {
+export default function ResultsTable({ results, query, loading, onSelectCode, hospitalNames, showHospital }) {
   if (loading) {
     return (
       <div className="mt-8 text-center text-gray-400 text-sm">Searching...</div>
@@ -26,17 +26,17 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
     );
   }
 
-  // Deduplicate by code+setting for the summary view — show one row per procedure,
-  // with the price range across payers
+  // Deduplicate by code+setting+hospital for the summary view
   const grouped = new Map();
   for (const r of results) {
-    const key = `${r.code}-${r.setting}`;
+    const key = `${r.code}-${r.setting}-${r.hospital_id}`;
     if (!grouped.has(key)) {
       grouped.set(key, {
         code: r.code,
         code_type: r.code_type,
         description: r.description,
         setting: r.setting,
+        hospital_id: r.hospital_id,
         cash_price: r.cash_price,
         gross_charge: r.gross_charge,
         min: r.min_negotiated,
@@ -54,6 +54,14 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
 
   const rows = [...grouped.values()];
 
+  function shortName(hospitalId) {
+    const full = hospitalNames[hospitalId] || hospitalId;
+    // Shorten for table display
+    if (full.includes('Dell Seton')) return 'Dell Seton';
+    if (full.includes('Ascension Seton')) return 'Ascension Seton';
+    return full;
+  }
+
   return (
     <div className="mt-6">
       <p className="text-sm text-gray-500 mb-3">
@@ -67,6 +75,7 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
             <tr className="border-b border-gray-200 text-left text-gray-500">
               <th className="pb-2 pr-4 font-medium">Procedure</th>
               <th className="pb-2 pr-4 font-medium">Code</th>
+              {showHospital && <th className="pb-2 pr-4 font-medium">Hospital</th>}
               <th className="pb-2 pr-4 font-medium">Setting</th>
               <th className="pb-2 pr-4 font-medium text-right">Cash Price</th>
               <th className="pb-2 pr-4 font-medium text-right">Min Rate</th>
@@ -77,7 +86,7 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
           <tbody>
             {rows.map((row) => (
               <tr
-                key={`${row.code}-${row.setting}`}
+                key={`${row.code}-${row.setting}-${row.hospital_id}`}
                 className="border-b border-gray-100 hover:bg-gray-50"
               >
                 <td className="py-3 pr-4">
@@ -107,6 +116,11 @@ export default function ResultsTable({ results, query, loading, onSelectCode }) 
                     <span className="ml-1 text-xs text-gray-400">{row.code_type}</span>
                   )}
                 </td>
+                {showHospital && (
+                  <td className="py-3 pr-4 text-xs text-gray-600">
+                    {shortName(row.hospital_id)}
+                  </td>
+                )}
                 <td className="py-3 pr-4">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     row.setting === 'INPATIENT'

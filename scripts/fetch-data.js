@@ -18,7 +18,12 @@ const HOSPITALS = [
     id: 'ascension-seton-austin',
     name: 'Ascension Seton Medical Center Austin',
     url: 'https://healthcare.ascension.org/-/media/project/ascension/healthcare/price-transparency-files/tx-csv/741109643-1164526786_ascension-seton_standardcharges.csv',
-    // Server returns a ZIP despite the .csv extension
+    compressed: true,
+  },
+  {
+    id: 'dell-seton-austin',
+    name: 'Dell Seton Medical Center at UT Austin',
+    url: 'https://healthcare.ascension.org/-/media/project/ascension/healthcare/price-transparency-files/tx-csv/741109643-1093810327_ascension-seton_standardcharges.csv',
     compressed: true,
   },
 ];

@@ -58,7 +58,7 @@ try {
  *   offset   - pagination offset (default 0)
  */
 app.get('/api/search', (req, res) => {
-  const { q, setting, payer, limit = 50, offset = 0 } = req.query;
+  const { q, setting, payer, hospital, limit = 50, offset = 0 } = req.query;
 
   if (!q || q.trim().length === 0) {
     return res.status(400).json({ error: 'Search query "q" is required' });
@@ -74,6 +74,7 @@ app.get('/api/search', (req, res) => {
         FROM procedures p
         JOIN procedures_fts fts ON p.id = fts.rowid
         WHERE procedures_fts MATCH ?
+        ${hospital ? 'AND p.hospital_id = ?' : ''}
         ${setting ? 'AND p.setting = ?' : ''}
         ${payer ? 'AND p.payer_name LIKE ?' : ''}
         ORDER BY rank
@@ -85,6 +86,7 @@ app.get('/api/search', (req, res) => {
         SELECT p.*
         FROM procedures p
         WHERE (p.description LIKE ? OR p.code LIKE ?)
+        ${hospital ? 'AND p.hospital_id = ?' : ''}
         ${setting ? 'AND p.setting = ?' : ''}
         ${payer ? 'AND p.payer_name LIKE ?' : ''}
         LIMIT ? OFFSET ?
@@ -92,6 +94,7 @@ app.get('/api/search', (req, res) => {
       params = [`%${q.trim()}%`, `%${q.trim()}%`];
     }
 
+    if (hospital) params.push(hospital);
     if (setting) params.push(setting.toUpperCase());
     if (payer) params.push(`%${payer}%`);
     params.push(Number(limit), Number(offset));

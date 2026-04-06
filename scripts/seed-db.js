@@ -134,6 +134,7 @@ function createIndexes(db) {
 // Map NDJSON filenames back to hospital IDs
 const HOSPITAL_MAP = {
   '741109643-1164526786_ascension-seton_standardcharges.ndjson': 'ascension-seton-austin',
+  '741109643-1093810327_ascension-seton_standardcharges.ndjson': 'dell-seton-austin',
 };
 
 async function main() {
