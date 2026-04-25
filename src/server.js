@@ -46,10 +46,17 @@ try {
   db = new Database(DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
 } catch (err) {
-  console.error(`Could not open database at ${DB_PATH}`);
-  console.error('Run "npm run setup" to download and process hospital data first.');
-  process.exit(1);
+  console.warn(`Could not open database at ${DB_PATH}`);
+  console.warn('Run "npm run setup" to download and process hospital data first.');
+  console.warn('Starting in setup-only mode — API endpoints will return 503.');
+  db = null;
 }
+
+// Middleware: return 503 if DB isn't ready
+app.use('/api', (req, res, next) => {
+  if (!db) return res.status(503).json({ error: 'Database not ready. Run npm run setup first.' });
+  next();
+});
 
 /**
  * Sanitize a user query for FTS5 MATCH.
@@ -449,5 +456,5 @@ app.listen(PORT, () => {
   console.log(`Hospital Price Transparency API running on http://localhost:${PORT}`);
   console.log(`Database: ${DB_PATH}`);
   // Pre-build the payer categories cache
-  buildPayerCategories();
+  if (db) buildPayerCategories();
 });
