@@ -208,6 +208,24 @@ app.get('/api/procedure/:code', (req, res) => {
 
   const anyPercentageBased = results.some(r => r.is_percentage_based);
 
+  // Look up official CMS Medicare rate for this code
+  let medicare = null;
+  try {
+    const medicareRow = db.prepare(
+      `SELECT facility_rate, nonfac_rate, work_rvu, conv_factor, locality, year
+       FROM medicare_rates WHERE code = ?`
+    ).get(code);
+    if (medicareRow) {
+      medicare = {
+        facility_rate: medicareRow.facility_rate,
+        nonfac_rate: medicareRow.nonfac_rate,
+        locality: medicareRow.locality,
+        year: medicareRow.year,
+        source: 'CMS Physician Fee Schedule',
+      };
+    }
+  } catch {}
+
   res.json({
     code,
     description: results[0].description,
@@ -219,6 +237,7 @@ app.get('/api/procedure/:code', (req, res) => {
     max_negotiated: results[0].max_negotiated,
     is_percentage_based: anyPercentageBased,
     payers: grouped,
+    medicare,
   });
 });
 

@@ -14,7 +14,8 @@
     "parse-json": "node scripts/parse-json.js",
     "seed-db": "node scripts/seed-db.js",
     "build-names": "node scripts/build-friendly-names.js",
-    "setup": "npm run fetch-data && npm run parse-data && npm run seed-db && npm run build-names"
+    "fetch-medicare": "node scripts/fetch-medicare.js",
+    "setup": "npm run fetch-data && npm run parse-data && npm run seed-db && npm run build-names && npm run fetch-medicare"
   },
   "keywords": [
     "healthcare",

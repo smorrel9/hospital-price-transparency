@@ -4,5 +4,8 @@ data/parsed/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/*.zip
+data/*.csv
+data/*.xlsx
 .env
 dist/

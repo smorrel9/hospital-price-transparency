@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import AutocompleteSearch from './AutocompleteSearch';
 import InsurancePicker from './InsurancePicker';
 import HospitalCard from './HospitalCard';
+import MedicareBanner from './MedicareBanner';
 import Tooltip from './Tooltip';
 const HOSPITAL_NAMES = {
   'ascension-seton-austin': 'Ascension Seton Medical Center Austin',
@@ -62,6 +63,17 @@ export default function App() {
     return byHospital;
   }
 
+  // Deduplicate rates — collapse rows with same payer, plan, and rate
+  function dedupeRates(rates) {
+    const seen = new Set();
+    return rates.filter((r) => {
+      const key = `${r.payer_name}|${r.plan_name}|${r.negotiated_rate}|${r.negotiated_percentage}|${r.methodology}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   // Filter rates by selected insurance
   function filterRates(allRates) {
     if (!selectedInsurance) return allRates;
@@ -96,7 +108,8 @@ export default function App() {
       return allRates;
     }
 
-    // Mark as filtered so the card knows to render in detail mode
+    // Deduplicate and mark as filtered so the card knows to render in detail mode
+    filtered = dedupeRates(filtered);
     filtered._filtered = true;
     return filtered;
   }
@@ -159,6 +172,9 @@ export default function App() {
                 {procedureData.setting && <span>Setting: {procedureData.setting}</span>}
               </div>
             </div>
+
+            {/* Medicare reference bar */}
+            <MedicareBanner medicare={procedureData.medicare} setting={procedureData.setting} />
 
             {/* Insurance picker */}
             <InsurancePicker onSelect={setSelectedInsurance} selected={selectedInsurance} />
