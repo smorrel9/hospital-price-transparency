@@ -18,8 +18,8 @@ import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = path.join(DATA_DIR, 'prices.db');
+const DATA_DIR = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : path.join(__dirname, '..', 'data');
+const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'prices.db');
 const ZIP_URL = 'https://www.cms.gov/files/zip/rvu26a.zip';
 const ZIP_PATH = path.join(DATA_DIR, 'rvu26a.zip');
 

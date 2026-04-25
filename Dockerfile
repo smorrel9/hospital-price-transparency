@@ -15,15 +15,18 @@ RUN npm run build
 # ---- Production stage ----
 FROM node:22-slim
 
+RUN apt-get update && apt-get install -y unzip curl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install production deps only
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Copy built frontend and server source
+# Copy built frontend, server source, and data scripts
 COPY --from=build /app/dist ./dist
 COPY src/ src/
+COPY scripts/ scripts/
 
 EXPOSE 3001
 
