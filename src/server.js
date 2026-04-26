@@ -458,13 +458,8 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Hospital Price Transparency API running on http://localhost:${PORT}`);
   console.log(`Database: ${DB_PATH}`);
-  // Build payer categories cache in background (don't block startup)
-  if (db) {
-    setImmediate(() => {
-      try { buildPayerCategories(); } catch (e) { console.error('Cache build failed:', e.message); }
-    });
-  }
+  // Payer categories cache is built lazily on first request to /api/payer-categories
 });
