@@ -381,9 +381,11 @@ app.get('/api/autocomplete', (req, res) => {
  * Build payer categories at startup (cached — the 36M row DISTINCT is slow).
  */
 let _payerCategoriesCache = null;
+let _payerCacheBuilding = false;
 function buildPayerCategories() {
   if (_payerCategoriesCache) return _payerCategoriesCache;
 
+  _payerCacheBuilding = true;
   console.log('Building payer categories cache...');
   const rows = db.prepare(`
     SELECT DISTINCT payer_name, hospital_id
@@ -428,6 +430,7 @@ function buildPayerCategories() {
     })),
   }));
 
+  _payerCacheBuilding = false;
   console.log(`  ${_payerCategoriesCache.length} categories, ${rows.length} payer/hospital combos`);
   return _payerCategoriesCache;
 }
@@ -438,6 +441,9 @@ function buildPayerCategories() {
  */
 app.get('/api/payer-categories', (req, res) => {
   try {
+    if (_payerCacheBuilding) {
+      return res.json({ categories: [], loading: true });
+    }
     res.json({ categories: buildPayerCategories() });
   } catch (err) {
     console.error('Payer categories error:', err.message);
@@ -455,6 +461,10 @@ if (process.env.NODE_ENV === 'production') {
 app.listen(PORT, () => {
   console.log(`Hospital Price Transparency API running on http://localhost:${PORT}`);
   console.log(`Database: ${DB_PATH}`);
-  // Pre-build the payer categories cache
-  if (db) buildPayerCategories();
+  // Build payer categories cache in background (don't block startup)
+  if (db) {
+    setImmediate(() => {
+      try { buildPayerCategories(); } catch (e) { console.error('Cache build failed:', e.message); }
+    });
+  }
 });
