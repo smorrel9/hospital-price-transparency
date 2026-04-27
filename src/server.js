@@ -43,8 +43,35 @@ function flagResults(rows) {
 
 let db;
 try {
-  db = new Database(DB_PATH, { readonly: true });
+  db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
+
+  // Ensure FTS5 virtual tables exist — rebuild if missing or corrupted
+  const hasFts = db.prepare(
+    "SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='procedures_fts'"
+  ).get().c > 0;
+
+  if (!hasFts) {
+    console.log('FTS indexes not found — building (this may take a minute)...');
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS procedures_fts USING fts5(
+      description, code, rev_code, payer_name, content='procedures', content_rowid='id'
+    )`);
+    db.exec("INSERT INTO procedures_fts(procedures_fts) VALUES('rebuild')");
+    console.log('  procedures_fts: done');
+
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS friendly_names_fts USING fts5(
+      friendly_name, original_description, search_terms, code, content='friendly_names', content_rowid='rowid'
+    )`);
+    db.exec("INSERT INTO friendly_names_fts(friendly_names_fts) VALUES('rebuild')");
+    console.log('  friendly_names_fts: done');
+
+    // Trigger to keep FTS in sync
+    db.exec(`CREATE TRIGGER IF NOT EXISTS procedures_ai AFTER INSERT ON procedures BEGIN
+      INSERT INTO procedures_fts(rowid, description, code, rev_code, payer_name)
+      VALUES (new.id, new.description, new.code, new.rev_code, new.payer_name);
+    END`);
+    console.log('FTS indexes built successfully.');
+  }
 } catch (err) {
   console.warn(`Could not open database at ${DB_PATH}`);
   console.warn('Run "npm run setup" to download and process hospital data first.');
