@@ -17,6 +17,9 @@ const PARSED_DIR = path.join(process.cwd(), 'data', 'parsed');
 const DB_PATH = path.join(process.cwd(), 'data', 'prices.db');
 const BATCH_SIZE = 5000;
 
+// Only keep consumer-useful code types (drop RC, CDM, NULL)
+const KEEP_CODE_TYPES = new Set(['CPT', 'HCPCS', 'MS-DRG', 'APR-DRG', 'TRIS-DRG']);
+
 function createSchema(db) {
   db.exec(`
     DROP TABLE IF EXISTS procedures_fts;
@@ -41,7 +44,8 @@ function createSchema(db) {
       methodology TEXT,
       min_negotiated REAL,
       max_negotiated REAL,
-      notes TEXT
+      notes TEXT,
+      UNIQUE(code, code_type, hospital_id, payer_name, plan_name, setting, negotiated_rate, methodology)
     );
 
     -- Full-text search index on description and codes
@@ -63,7 +67,7 @@ async function seedFile(db, filepath, hospitalId) {
   console.log(`[seed] ${path.basename(filepath)} -> ${hospitalId}`);
 
   const insert = db.prepare(`
-    INSERT INTO procedures (
+    INSERT OR IGNORE INTO procedures (
       hospital_id, description, code, code_type, rev_code, modifiers, setting,
       gross_charge, cash_price, payer_name, plan_name,
       negotiated_rate, negotiated_percentage, negotiated_algorithm,
@@ -89,34 +93,49 @@ async function seedFile(db, filepath, hospitalId) {
 
   let batch = [];
   let total = 0;
+  let skipped = 0;
+  let deduped = 0;
 
   for await (const line of rl) {
     if (!line.trim()) continue;
 
     const record = JSON.parse(line);
-    record.hospital_id = hospitalId;
 
+    // Filter: only keep consumer-useful code types
+    if (!record.code_type || !KEEP_CODE_TYPES.has(record.code_type)) {
+      skipped++;
+      continue;
+    }
+
+    record.hospital_id = hospitalId;
     batch.push(record);
 
     if (batch.length >= BATCH_SIZE) {
+      const before = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
       insertBatch(batch);
+      const after = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
+      deduped += batch.length - (after - before);
       total += batch.length;
       batch = [];
 
       if (total % 500000 === 0) {
-        console.log(`  ... ${(total / 1000000).toFixed(1)}M rows inserted`);
+        console.log(`  ... ${(total / 1000000).toFixed(1)}M rows processed (${skipped.toLocaleString()} filtered, ${deduped.toLocaleString()} deduped)`);
       }
     }
   }
 
   // Flush remaining
   if (batch.length > 0) {
+    const before = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
     insertBatch(batch);
+    const after = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
+    deduped += batch.length - (after - before);
     total += batch.length;
   }
 
-  console.log(`  Inserted ${total} rows`);
-  return total;
+  console.log(`  Processed ${total.toLocaleString()} rows, skipped ${skipped.toLocaleString()} (non-CPT/HCPCS/DRG), deduped ${deduped.toLocaleString()}`);
+  const finalCount = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
+  return finalCount;
 }
 
 function createIndexes(db) {
@@ -127,6 +146,7 @@ function createIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_procedures_payer ON procedures(payer_name);
     CREATE INDEX IF NOT EXISTS idx_procedures_setting ON procedures(setting);
     CREATE INDEX IF NOT EXISTS idx_procedures_description ON procedures(description);
+    CREATE INDEX IF NOT EXISTS idx_procedures_payer_hospital ON procedures(payer_name, hospital_id);
   `);
   console.log('  Indexes created.');
 }
@@ -148,7 +168,7 @@ async function main() {
 
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = OFF');      // faster bulk insert
+  db.pragma('synchronous = NORMAL');    // safe bulk insert
   db.pragma('cache_size = -64000');    // 64MB cache
 
   createSchema(db);
