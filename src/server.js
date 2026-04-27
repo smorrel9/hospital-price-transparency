@@ -46,32 +46,10 @@ try {
   db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
 
-  // Ensure FTS5 virtual tables exist — rebuild if missing or corrupted
-  const hasFts = db.prepare(
+  // Check if FTS needs building — done after listen() to not block startup
+  const _needsFtsBuild = db.prepare(
     "SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='procedures_fts'"
-  ).get().c > 0;
-
-  if (!hasFts) {
-    console.log('FTS indexes not found — building (this may take a minute)...');
-    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS procedures_fts USING fts5(
-      description, code, rev_code, payer_name, content='procedures', content_rowid='id'
-    )`);
-    db.exec("INSERT INTO procedures_fts(procedures_fts) VALUES('rebuild')");
-    console.log('  procedures_fts: done');
-
-    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS friendly_names_fts USING fts5(
-      friendly_name, original_description, search_terms, code, content='friendly_names', content_rowid='rowid'
-    )`);
-    db.exec("INSERT INTO friendly_names_fts(friendly_names_fts) VALUES('rebuild')");
-    console.log('  friendly_names_fts: done');
-
-    // Trigger to keep FTS in sync
-    db.exec(`CREATE TRIGGER IF NOT EXISTS procedures_ai AFTER INSERT ON procedures BEGIN
-      INSERT INTO procedures_fts(rowid, description, code, rev_code, payer_name)
-      VALUES (new.id, new.description, new.code, new.rev_code, new.payer_name);
-    END`);
-    console.log('FTS indexes built successfully.');
-  }
+  ).get().c === 0;
 } catch (err) {
   console.warn(`Could not open database at ${DB_PATH}`);
   console.warn('Run "npm run setup" to download and process hospital data first.');
@@ -488,5 +466,30 @@ if (process.env.NODE_ENV === 'production') {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Hospital Price Transparency API running on http://localhost:${PORT}`);
   console.log(`Database: ${DB_PATH}`);
-  // Payer categories cache is built lazily on first request to /api/payer-categories
+
+  // Build FTS indexes if missing (runs after listen so health checks pass)
+  if (db && _needsFtsBuild) {
+    console.log('FTS indexes not found — building (this may take a few minutes)...');
+    try {
+      db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS procedures_fts USING fts5(
+        description, code, rev_code, payer_name, content='procedures', content_rowid='id'
+      )`);
+      db.exec("INSERT INTO procedures_fts(procedures_fts) VALUES('rebuild')");
+      console.log('  procedures_fts: done');
+
+      db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS friendly_names_fts USING fts5(
+        friendly_name, original_description, search_terms, code, content='friendly_names', content_rowid='rowid'
+      )`);
+      db.exec("INSERT INTO friendly_names_fts(friendly_names_fts) VALUES('rebuild')");
+      console.log('  friendly_names_fts: done');
+
+      db.exec(`CREATE TRIGGER IF NOT EXISTS procedures_ai AFTER INSERT ON procedures BEGIN
+        INSERT INTO procedures_fts(rowid, description, code, rev_code, payer_name)
+        VALUES (new.id, new.description, new.code, new.rev_code, new.payer_name);
+      END`);
+      console.log('FTS indexes built successfully.');
+    } catch (e) {
+      console.error('FTS build failed:', e.message);
+    }
+  }
 });
