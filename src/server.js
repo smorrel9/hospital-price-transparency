@@ -42,12 +42,13 @@ function flagResults(rows) {
 }
 
 let db;
+let _needsFtsBuild = false;
 try {
   db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
 
   // Check if FTS needs building — done after listen() to not block startup
-  const _needsFtsBuild = db.prepare(
+  _needsFtsBuild = db.prepare(
     "SELECT COUNT(*) as c FROM sqlite_master WHERE type='table' AND name='procedures_fts'"
   ).get().c === 0;
 } catch (err) {
