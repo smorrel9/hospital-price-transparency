@@ -42,10 +42,12 @@ const ADDENDUM_CSV = path.join(OPPS_DIR, ADDENDUM_CSV_NAME);
 const LABOR_SHARE = 0.60;
 const NON_LABOR_SHARE = 0.40;
 
-// Austin-Round Rock-Georgetown (CBSA 12420) FY 2026 wage index.
-// PLACEHOLDER: 1.00 = national unadjusted. Refine from CMS FY 2026 Table 3
-// (Final Rule Wage Index by CBSA). Historical Austin values: ~0.97-1.00.
-const AUSTIN_WAGE_INDEX = 1.00;
+// Austin-Round Rock-San Marcos (CBSA 12420) FY 2026 wage index, sourced from
+// CMS-1833-F Table 3 ("Wage Index Table by CBSA — FY 2026 Final Rule").
+// Pre-floor value is 0.9229; Texas qualifies for the rural floor, which
+// raises the applied index to 0.9721. CMS uses the floor-adjusted value to
+// calculate payments, so that's the right number here.
+const AUSTIN_WAGE_INDEX = 0.9721;
 
 // Status indicators that produce a separate APC payment under OPPS.
 // J1/J2 = Comprehensive APC; T/S/V = standard procedure payments;
