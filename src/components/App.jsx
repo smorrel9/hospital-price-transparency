@@ -25,6 +25,20 @@ function matchesSetting(rateSetting, filter) {
   return s === filter || s === 'BOTH';
 }
 
+// Compute the same Medicare reference value the banner shows: PFS + OPPS
+// when OPPS is payable, else PFS. Hidden in Inpatient mode (no DRG modeling yet).
+// Returns null when there's nothing useful to compare against.
+const PAYABLE_OPPS_SI = new Set(['J1', 'J2', 'T', 'S', 'V', 'Q1', 'Q2', 'Q3', 'P', 'R', 'S1', 'U']);
+export function getMedicareReference(medicare, selectedSetting) {
+  if (!medicare) return null;
+  if (selectedSetting === 'INPATIENT') return null;
+  const pfs = medicare.facility_rate || 0;
+  const opps = medicare.opps;
+  const oppsPayable = opps && PAYABLE_OPPS_SI.has(opps.status_indicator) && opps.austin_payment > 0;
+  const total = pfs + (oppsPayable ? opps.austin_payment : 0);
+  return total > 0 ? total : null;
+}
+
 // Cash price is stored per row and can have multiple distinct values per
 // (hospital, code) when hospitals post tiered self-pay rates. Return min/max
 // so we can render a range when they differ.
@@ -153,6 +167,7 @@ export default function App() {
 
   const byHospital = groupByHospital();
   const hospitalIds = Object.keys(byHospital);
+  const medicareReference = getMedicareReference(procedureData?.medicare, selectedSetting);
 
   // Determine which settings have any rates for this procedure
   const availableSettings = { OUTPATIENT: false, INPATIENT: false };
@@ -247,6 +262,7 @@ export default function App() {
                       hospital={hid}
                       rates={rates}
                       cashRange={cashRange}
+                      medicareReference={medicareReference}
                       hospitalName={HOSPITAL_NAMES[hid] || hid}
                       colorIndex={i}
                     />

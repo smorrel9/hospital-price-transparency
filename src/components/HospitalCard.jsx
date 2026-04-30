@@ -42,7 +42,7 @@ function groupBySetting(rates) {
     .concat(groups.UNKNOWN.length ? [{ key: 'UNKNOWN', label: 'Unspecified', rates: groups.UNKNOWN }] : []);
 }
 
-export default function HospitalCard({ hospital, rates, cashRange, hospitalName, colorIndex = 0 }) {
+export default function HospitalCard({ hospital, rates, cashRange, medicareReference, hospitalName, colorIndex = 0 }) {
   const borderColor = BORDER_COLORS[colorIndex % BORDER_COLORS.length];
   const hasSpecificPayer = rates._filtered;
 
@@ -55,9 +55,9 @@ export default function HospitalCard({ hospital, rates, cashRange, hospitalName,
       </div>
 
       {!hasSpecificPayer ? (
-        <SummaryView rates={rates} />
+        <SummaryView rates={rates} medicareReference={medicareReference} />
       ) : (
-        <FilteredView rates={rates} />
+        <FilteredView rates={rates} medicareReference={medicareReference} />
       )}
     </div>
   );
@@ -136,7 +136,7 @@ function SummaryView({ rates }) {
   );
 }
 
-function FilteredView({ rates }) {
+function FilteredView({ rates, medicareReference }) {
   const filteredRates = rates.filter((r) => r !== undefined);
 
   if (filteredRates.length === 0) {
@@ -161,7 +161,7 @@ function FilteredView({ rates }) {
           )}
           <div className="space-y-3">
             {group.rates.map((rate, i) => (
-              <RateRow key={`${group.key}-${i}`} rate={rate} />
+              <RateRow key={`${group.key}-${i}`} rate={rate} medicareReference={medicareReference} />
             ))}
           </div>
         </div>
@@ -181,8 +181,14 @@ function FilteredView({ rates }) {
   );
 }
 
-function RateRow({ rate }) {
+function RateRow({ rate, medicareReference }) {
   const methodology = formatMethodology(rate.methodology);
+  const showVsMedicare =
+    medicareReference != null &&
+    medicareReference > 0 &&
+    rate.negotiated_rate != null &&
+    rate.negotiated_rate > 0;
+
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="flex-1 min-w-0">
@@ -209,8 +215,27 @@ function RateRow({ rate }) {
             ? `${rate.negotiated_percentage}%`
             : '--'}
         </div>
+        {showVsMedicare && <VsMedicareBadge rate={rate.negotiated_rate} medicare={medicareReference} />}
       </div>
     </div>
+  );
+}
+
+function VsMedicareBadge({ rate, medicare }) {
+  const ratio = rate / medicare;
+  const pct = Math.round((ratio - 1) * 100);
+  const label = pct >= 0 ? `+${pct}% vs Medicare` : `${pct}% vs Medicare`;
+  const colorClass = pct < 0
+    ? 'text-emerald-600'
+    : pct <= 100
+    ? 'text-gray-500'
+    : pct <= 300
+    ? 'text-amber-600'
+    : 'text-rose-600';
+  return (
+    <Tooltip text={`Negotiated rate is ${ratio.toFixed(2)}x the estimated total Medicare payment for this code.`}>
+      <div className={`text-xs mt-0.5 ${colorClass}`}>{label}</div>
+    </Tooltip>
   );
 }
 

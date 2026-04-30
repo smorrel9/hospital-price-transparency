@@ -28,17 +28,23 @@ function classifySI(si) {
 export default function MedicareBanner({ medicare, selectedSetting = 'ALL' }) {
   if (!medicare) return null;
 
-  const pfs = medicare.facility_rate;
+  const pfs = medicare.facility_rate || 0;
   const opps = medicare.opps;
-  if (!pfs || pfs <= 0) return null;
-
   const oppsClass = classifySI(opps?.status_indicator);
   const oppsPayable = oppsClass === 'payable' && opps?.austin_payment > 0;
   const showOpps = selectedSetting !== 'INPATIENT' && opps != null;
-  const total = oppsPayable ? pfs + opps.austin_payment : pfs;
+  const hasPfs = pfs > 0;
 
-  const headerLabel = oppsPayable && showOpps
+  // Hide banner only when we have nothing useful to show — neither a physician
+  // fee nor a payable OPPS rate.
+  if (!hasPfs && !(showOpps && oppsPayable)) return null;
+
+  const total = (hasPfs ? pfs : 0) + (showOpps && oppsPayable ? opps.austin_payment : 0);
+
+  const headerLabel = hasPfs && oppsPayable && showOpps
     ? 'Estimated Total Medicare'
+    : oppsPayable && showOpps
+    ? 'Medicare Hospital Facility Fee'
     : 'Medicare Professional Fee';
 
   return (
@@ -59,9 +65,16 @@ export default function MedicareBanner({ medicare, selectedSetting = 'ALL' }) {
           </div>
           {showOpps && oppsPayable && (
             <div className="text-xs text-green-800 mt-1.5">
-              <span className="font-medium">Physician fee</span> {formatPrice(pfs)}
-              <span className="mx-1.5 text-green-600">+</span>
+              {hasPfs && (
+                <>
+                  <span className="font-medium">Physician fee</span> {formatPrice(pfs)}
+                  <span className="mx-1.5 text-green-600">+</span>
+                </>
+              )}
               <span className="font-medium">Hospital facility fee</span> {formatPrice(opps.austin_payment)}
+              {!hasPfs && (
+                <span className="ml-2 text-green-700 italic">(no separate physician fee for this code)</span>
+              )}
               {opps.status_indicator && (
                 <Tooltip text={`OPPS Status Indicator: ${opps.status_indicator}. APC ${opps.apc_code || 'n/a'}.`}>
                   <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-xs cursor-help">
