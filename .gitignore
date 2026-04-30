@@ -9,3 +9,6 @@ data/*.csv
 data/*.xlsx
 .env
 dist/
+.venv/
+analysis/
+

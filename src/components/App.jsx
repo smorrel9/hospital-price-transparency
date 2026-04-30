@@ -3,6 +3,7 @@ import AutocompleteSearch from './AutocompleteSearch';
 import InsurancePicker from './InsurancePicker';
 import HospitalCard from './HospitalCard';
 import MedicareBanner from './MedicareBanner';
+import SettingToggle from './SettingToggle';
 import Tooltip from './Tooltip';
 const HOSPITAL_NAMES = {
   'ascension-seton-austin': 'Ascension Seton Medical Center Austin',
@@ -11,9 +12,38 @@ const HOSPITAL_NAMES = {
   'st-davids-austin': "St. David's Medical Center Austin",
 };
 
+// Normalize free-text setting values from hospital files (some lowercase, some upper).
+export function normalizeSetting(s) {
+  return (s || '').toUpperCase();
+}
+
+// A rate matches the active setting filter if the filter is ALL,
+// or the rate's setting equals the filter, or the rate is BOTH (applies to either).
+function matchesSetting(rateSetting, filter) {
+  if (filter === 'ALL') return true;
+  const s = normalizeSetting(rateSetting);
+  return s === filter || s === 'BOTH';
+}
+
+// Cash price is stored per row and can have multiple distinct values per
+// (hospital, code) when hospitals post tiered self-pay rates. Return min/max
+// so we can render a range when they differ.
+function findCashPriceRange(rates) {
+  let min = null;
+  let max = null;
+  for (const r of rates) {
+    const v = r.cash_price;
+    if (v == null || v <= 0) continue;
+    if (min == null || v < min) min = v;
+    if (max == null || v > max) max = v;
+  }
+  return min == null ? null : { min, max };
+}
+
 export default function App() {
   const [selectedCode, setSelectedCode] = useState(null);
   const [selectedInsurance, setSelectedInsurance] = useState(null);
+  const [selectedSetting, setSelectedSetting] = useState('ALL');
   const [procedureData, setProcedureData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -46,6 +76,7 @@ export default function App() {
   function handleCodeSelect(code) {
     setSelectedCode(code);
     setSelectedInsurance(null);
+    setSelectedSetting('ALL');
   }
 
   // Group payers data by hospital_id
@@ -74,9 +105,15 @@ export default function App() {
     });
   }
 
+  // Filter rates by setting first (BOTH rates match either OUTPATIENT or INPATIENT)
+  function filterBySetting(rates) {
+    return rates.filter((r) => matchesSetting(r.setting, selectedSetting));
+  }
+
   // Filter rates by selected insurance
   function filterRates(allRates) {
-    if (!selectedInsurance) return allRates;
+    const settingFiltered = filterBySetting(allRates);
+    if (!selectedInsurance) return settingFiltered;
 
     const { category, payerName } = selectedInsurance;
 
@@ -94,18 +131,18 @@ export default function App() {
     let filtered;
     if (payerName) {
       // Specific payer name
-      filtered = allRates.filter((r) => r.payer_name === payerName);
+      filtered = settingFiltered.filter((r) => r.payer_name === payerName);
     } else if (category && categoryPatterns[category]) {
       // Broad category
-      filtered = allRates.filter((r) => categoryPatterns[category].test(r.payer_name));
+      filtered = settingFiltered.filter((r) => categoryPatterns[category].test(r.payer_name));
     } else if (category === 'Other') {
       // "Other" — everything that doesn't match a named category
       const namedPatterns = Object.values(categoryPatterns);
-      filtered = allRates.filter(
+      filtered = settingFiltered.filter(
         (r) => r.payer_name && !namedPatterns.some((p) => p.test(r.payer_name))
       );
     } else {
-      return allRates;
+      return settingFiltered;
     }
 
     // Deduplicate and mark as filtered so the card knows to render in detail mode
@@ -116,6 +153,16 @@ export default function App() {
 
   const byHospital = groupByHospital();
   const hospitalIds = Object.keys(byHospital);
+
+  // Determine which settings have any rates for this procedure
+  const availableSettings = { OUTPATIENT: false, INPATIENT: false };
+  for (const rates of Object.values(byHospital)) {
+    for (const r of rates) {
+      const s = normalizeSetting(r.setting);
+      if (s === 'OUTPATIENT' || s === 'BOTH') availableSettings.OUTPATIENT = true;
+      if (s === 'INPATIENT' || s === 'BOTH') availableSettings.INPATIENT = true;
+    }
+  }
 
   // Build procedure name tooltip
   const procedureTooltip =
@@ -169,12 +216,18 @@ export default function App() {
                     <span className="font-mono">{procedureData.code}</span>
                   </Tooltip>
                 </span>
-                {procedureData.setting && <span>Setting: {procedureData.setting}</span>}
               </div>
             </div>
 
             {/* Medicare reference bar */}
-            <MedicareBanner medicare={procedureData.medicare} setting={procedureData.setting} />
+            <MedicareBanner medicare={procedureData.medicare} selectedSetting={selectedSetting} />
+
+            {/* Setting toggle */}
+            <SettingToggle
+              selected={selectedSetting}
+              onSelect={setSelectedSetting}
+              available={availableSettings}
+            />
 
             {/* Insurance picker */}
             <InsurancePicker onSelect={setSelectedInsurance} selected={selectedInsurance} />
@@ -185,11 +238,15 @@ export default function App() {
                 {hospitalIds.map((hid, i) => {
                   const allRates = byHospital[hid];
                   const rates = filterRates(allRates);
+                  // Cash price ignores the setting filter so it always reflects the
+                  // hospital's posted self-pay rate for this procedure.
+                  const cashRange = findCashPriceRange(allRates);
                   return (
                     <HospitalCard
                       key={hid}
                       hospital={hid}
                       rates={rates}
+                      cashRange={cashRange}
                       hospitalName={HOSPITAL_NAMES[hid] || hid}
                       colorIndex={i}
                     />

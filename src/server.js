@@ -345,6 +345,7 @@ app.get('/api/autocomplete', (req, res) => {
           FROM friendly_names_fts fts
           JOIN friendly_names fn ON fn.code = fts.code
           WHERE friendly_names_fts MATCH ?
+          ORDER BY rank
           LIMIT ?
         `).all(ftsQuery, maxResults * 3);
 

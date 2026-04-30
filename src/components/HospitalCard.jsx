@@ -13,125 +13,203 @@ const BORDER_COLORS = [
 const METHODOLOGY_TOOLTIPS = {
   'Fee Schedule': 'Fixed price per procedure — most directly comparable across hospitals',
   'Case Rate': 'Bundled payment for the entire episode, may include supplies and implants',
-  '% of Charges': 'Rate is calculated as a percentage of the hospital\'s list price',
+  '% of Charges': "Rate is calculated as a percentage of the hospital's list price",
   'Per Diem': 'Daily rate — total cost depends on length of stay',
 };
 
-export default function HospitalCard({ hospital, rates, hospitalName, colorIndex = 0 }) {
-  const borderColor = BORDER_COLORS[colorIndex % BORDER_COLORS.length];
+// Settings render in this order; rates tagged BOTH appear in their own group
+// in the All view, or merged into the active filter.
+const SETTING_ORDER = ['OUTPATIENT', 'INPATIENT', 'BOTH'];
+const SETTING_LABELS = {
+  OUTPATIENT: 'Outpatient',
+  INPATIENT: 'Inpatient',
+  BOTH: 'Both Settings',
+};
 
-  // If no specific payer selected (rates is all rates for this hospital)
-  // we show a summary. If a payer is selected, rates is filtered.
-  const hasSpecificPayer = rates._filtered;
+function normalize(s) {
+  return (s || '').toUpperCase();
+}
 
-  if (!hasSpecificPayer) {
-    // All-insurance summary mode
-    const payerNames = new Set();
-    let min = Infinity;
-    let max = -Infinity;
-
-    for (const rate of rates) {
-      if (rate.payer_name) payerNames.add(rate.payer_name);
-      if (rate.negotiated_rate != null) {
-        if (rate.negotiated_rate < min) min = rate.negotiated_rate;
-        if (rate.negotiated_rate > max) max = rate.negotiated_rate;
-      }
-    }
-
-    return (
-      <div className={`bg-white border border-gray-200 ${borderColor} border-l-4 rounded-lg p-5`}>
-        <h3 className="font-semibold text-gray-900 text-base">{hospitalName}</h3>
-
-        <div className="mt-3 grid grid-cols-3 gap-4">
-          <SummaryCell label="Payers" value={`${payerNames.size}`} />
-          <SummaryCell
-            label="Rate Range"
-            value={min < Infinity ? `${formatPrice(min)} - ${formatPrice(max)}` : '--'}
-          />
-          <SummaryCell label="Cash Price" value={formatPrice(rates[0]?.cash_price)} />
-        </div>
-
-        <div className="mt-3 grid grid-cols-3 gap-4 text-xs text-gray-400">
-          <div>
-            <span className="block text-gray-500">Min Negotiated</span>
-            {formatPrice(rates[0]?.min_negotiated)}
-          </div>
-          <div>
-            <span className="block text-gray-500">Max Negotiated</span>
-            {formatPrice(rates[0]?.max_negotiated)}
-          </div>
-          <div>
-            <span className="block text-gray-500">Gross Charge</span>
-            {formatPrice(rates[0]?.gross_charge)}
-          </div>
-        </div>
-      </div>
-    );
+// Group rates by normalized setting, preserving SETTING_ORDER.
+function groupBySetting(rates) {
+  const groups = { OUTPATIENT: [], INPATIENT: [], BOTH: [], UNKNOWN: [] };
+  for (const r of rates) {
+    const s = normalize(r.setting);
+    (groups[s] ?? groups.UNKNOWN).push(r);
   }
+  return SETTING_ORDER.map((key) => ({ key, label: SETTING_LABELS[key], rates: groups[key] }))
+    .filter((g) => g.rates.length > 0)
+    .concat(groups.UNKNOWN.length ? [{ key: 'UNKNOWN', label: 'Unspecified', rates: groups.UNKNOWN }] : []);
+}
 
-  // Filtered payer mode — show each matching rate as a row
-  const filteredRates = rates.filter((r) => r !== undefined);
+export default function HospitalCard({ hospital, rates, cashRange, hospitalName, colorIndex = 0 }) {
+  const borderColor = BORDER_COLORS[colorIndex % BORDER_COLORS.length];
+  const hasSpecificPayer = rates._filtered;
 
   return (
     <div className={`bg-white border border-gray-200 ${borderColor} border-l-4 rounded-lg p-5`}>
-      <h3 className="font-semibold text-gray-900 text-base">{hospitalName}</h3>
+      {/* Hospital name + prominent cash price */}
+      <div className="flex items-start justify-between gap-4">
+        <h3 className="font-semibold text-gray-900 text-base">{hospitalName}</h3>
+        <CashPriceBadge range={cashRange} />
+      </div>
 
-      {filteredRates.length === 0 ? (
-        <p className="mt-3 text-sm text-gray-400">No matching rates for this payer at this hospital.</p>
+      {!hasSpecificPayer ? (
+        <SummaryView rates={rates} />
       ) : (
-        <div className="mt-3 space-y-3">
-          {filteredRates.map((rate, i) => {
-            const methodology = formatMethodology(rate.methodology);
-            return (
-              <div key={i} className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-700">
-                    {formatPayer(rate.payer_name)}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    {formatPlan(rate.plan_name)}
-                    {methodology && (
-                      <>
-                        {' \u00B7 '}
-                        <Tooltip text={METHODOLOGY_TOOLTIPS[methodology]}>
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">
-                            {methodology}
-                          </span>
-                        </Tooltip>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="text-xl font-semibold text-gray-900">
-                    {rate.negotiated_rate != null
-                      ? formatPrice(rate.negotiated_rate)
-                      : rate.negotiated_percentage
-                      ? `${rate.negotiated_percentage}%`
-                      : '--'}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <FilteredView rates={rates} />
+      )}
+    </div>
+  );
+}
 
-          {/* Summary row */}
-          <div className="border-t border-gray-100 pt-3 mt-3 grid grid-cols-3 gap-4 text-xs text-gray-400">
-            <div>
-              <span className="block text-gray-500">Cash Price</span>
-              {formatPrice(filteredRates[0]?.cash_price)}
+function CashPriceBadge({ range }) {
+  if (range == null) {
+    return (
+      <Tooltip text="This hospital hasn't posted a self-pay rate for this procedure">
+        <div className="text-right flex-shrink-0">
+          <div className="text-xs text-gray-400 uppercase tracking-wide">Cash Price</div>
+          <div className="text-sm text-gray-400 italic">Not posted</div>
+        </div>
+      </Tooltip>
+    );
+  }
+  const { min, max } = range;
+  const isRange = min !== max;
+  const tooltipText = isRange
+    ? "Hospital posted multiple self-pay tiers for this procedure — showing the range"
+    : "The price a self-pay or uninsured patient would pay";
+  return (
+    <Tooltip text={tooltipText}>
+      <div className="text-right flex-shrink-0">
+        <div className="text-xs text-emerald-700 uppercase tracking-wide font-medium">Cash Price</div>
+        <div className="text-lg font-semibold text-emerald-700">
+          {isRange ? `${formatPrice(min)} – ${formatPrice(max)}` : formatPrice(min)}
+        </div>
+      </div>
+    </Tooltip>
+  );
+}
+
+function SummaryView({ rates }) {
+  const payerNames = new Set();
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (const rate of rates) {
+    if (rate.payer_name) payerNames.add(rate.payer_name);
+    if (rate.negotiated_rate != null) {
+      if (rate.negotiated_rate < min) min = rate.negotiated_rate;
+      if (rate.negotiated_rate > max) max = rate.negotiated_rate;
+    }
+  }
+
+  if (rates.length === 0) {
+    return (
+      <p className="mt-4 text-sm text-gray-400">
+        No rates posted for this care setting at this hospital.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <SummaryCell label="Payers" value={`${payerNames.size}`} />
+        <SummaryCell
+          label="Rate Range"
+          value={min < Infinity ? `${formatPrice(min)} - ${formatPrice(max)}` : '--'}
+        />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-4 text-xs text-gray-400">
+        <div>
+          <span className="block text-gray-500">Min Negotiated</span>
+          {formatPrice(rates[0]?.min_negotiated)}
+        </div>
+        <div>
+          <span className="block text-gray-500">Gross Charge</span>
+          {formatPrice(rates[0]?.gross_charge)}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function FilteredView({ rates }) {
+  const filteredRates = rates.filter((r) => r !== undefined);
+
+  if (filteredRates.length === 0) {
+    return (
+      <p className="mt-4 text-sm text-gray-400">
+        No matching rates for this insurer at this hospital and setting.
+      </p>
+    );
+  }
+
+  const groups = groupBySetting(filteredRates);
+  const showHeaders = groups.length > 1;
+
+  return (
+    <div className="mt-4 space-y-4">
+      {groups.map((group) => (
+        <div key={group.key}>
+          {showHeaders && (
+            <div className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-2">
+              {group.label}
             </div>
-            <div>
-              <span className="block text-gray-500">Min Negotiated</span>
-              {formatPrice(filteredRates[0]?.min_negotiated)}
-            </div>
-            <div>
-              <span className="block text-gray-500">Max Negotiated</span>
-              {formatPrice(filteredRates[0]?.max_negotiated)}
-            </div>
+          )}
+          <div className="space-y-3">
+            {group.rates.map((rate, i) => (
+              <RateRow key={`${group.key}-${i}`} rate={rate} />
+            ))}
           </div>
         </div>
-      )}
+      ))}
+
+      <div className="border-t border-gray-100 pt-3 grid grid-cols-2 gap-4 text-xs text-gray-400">
+        <div>
+          <span className="block text-gray-500">Min Negotiated</span>
+          {formatPrice(filteredRates[0]?.min_negotiated)}
+        </div>
+        <div>
+          <span className="block text-gray-500">Max Negotiated</span>
+          {formatPrice(filteredRates[0]?.max_negotiated)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RateRow({ rate }) {
+  const methodology = formatMethodology(rate.methodology);
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-gray-700">{formatPayer(rate.payer_name)}</div>
+        <div className="text-xs text-gray-400 mt-0.5">
+          {formatPlan(rate.plan_name)}
+          {methodology && (
+            <>
+              {' · '}
+              <Tooltip text={METHODOLOGY_TOOLTIPS[methodology]}>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">
+                  {methodology}
+                </span>
+              </Tooltip>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <div className="text-xl font-semibold text-gray-900">
+          {rate.negotiated_rate != null
+            ? formatPrice(rate.negotiated_rate)
+            : rate.negotiated_percentage
+            ? `${rate.negotiated_percentage}%`
+            : '--'}
+        </div>
+      </div>
     </div>
   );
 }
