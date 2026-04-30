@@ -225,7 +225,9 @@ app.get('/api/procedure/:code', (req, res) => {
   let medicare = null;
   try {
     const medicareRow = db.prepare(
-      `SELECT facility_rate, nonfac_rate, work_rvu, conv_factor, locality, year
+      `SELECT facility_rate, nonfac_rate, work_rvu, conv_factor, locality, year,
+              apc_code, opps_status_indicator, opps_base_payment, opps_austin_payment,
+              opps_quarter
        FROM medicare_rates WHERE code = ?`
     ).get(code);
     if (medicareRow) {
@@ -235,6 +237,15 @@ app.get('/api/procedure/:code', (req, res) => {
         locality: medicareRow.locality,
         year: medicareRow.year,
         source: 'CMS Physician Fee Schedule',
+        opps: medicareRow.opps_status_indicator
+          ? {
+              apc_code: medicareRow.apc_code,
+              status_indicator: medicareRow.opps_status_indicator,
+              base_payment: medicareRow.opps_base_payment,
+              austin_payment: medicareRow.opps_austin_payment,
+              quarter: medicareRow.opps_quarter,
+            }
+          : null,
       };
     }
   } catch {}
