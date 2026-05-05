@@ -42,7 +42,7 @@ function groupBySetting(rates) {
     .concat(groups.UNKNOWN.length ? [{ key: 'UNKNOWN', label: 'Unspecified', rates: groups.UNKNOWN }] : []);
 }
 
-export default function HospitalCard({ hospital, rates, cashRange, medicareReference, hospitalName, colorIndex = 0 }) {
+export default function HospitalCard({ hospital, rates, cashRange, medicareReference, expectedDays, hospitalName, colorIndex = 0 }) {
   const borderColor = BORDER_COLORS[colorIndex % BORDER_COLORS.length];
   const hasSpecificPayer = rates._filtered;
 
@@ -57,7 +57,7 @@ export default function HospitalCard({ hospital, rates, cashRange, medicareRefer
       {!hasSpecificPayer ? (
         <SummaryView rates={rates} medicareReference={medicareReference} />
       ) : (
-        <FilteredView rates={rates} medicareReference={medicareReference} />
+        <FilteredView rates={rates} medicareReference={medicareReference} expectedDays={expectedDays} />
       )}
     </div>
   );
@@ -136,7 +136,7 @@ function SummaryView({ rates }) {
   );
 }
 
-function FilteredView({ rates, medicareReference }) {
+function FilteredView({ rates, medicareReference, expectedDays }) {
   const filteredRates = rates.filter((r) => r !== undefined);
 
   if (filteredRates.length === 0) {
@@ -150,6 +150,11 @@ function FilteredView({ rates, medicareReference }) {
   const groups = groupBySetting(filteredRates);
   const showHeaders = groups.length > 1;
 
+  // Compute min/max from the visible rates, applying per-diem stay multiplication
+  // when we know the typical length of stay. This keeps the range honest when
+  // a hospital mixes per-diem and case-rate methodologies.
+  const stayRange = computeStayRange(filteredRates, expectedDays);
+
   return (
     <div className="mt-4 space-y-4">
       {groups.map((group) => (
@@ -161,7 +166,12 @@ function FilteredView({ rates, medicareReference }) {
           )}
           <div className="space-y-3">
             {group.rates.map((rate, i) => (
-              <RateRow key={`${group.key}-${i}`} rate={rate} medicareReference={medicareReference} />
+              <RateRow
+                key={`${group.key}-${i}`}
+                rate={rate}
+                medicareReference={medicareReference}
+                expectedDays={expectedDays}
+              />
             ))}
           </div>
         </div>
@@ -169,25 +179,56 @@ function FilteredView({ rates, medicareReference }) {
 
       <div className="border-t border-gray-100 pt-3 grid grid-cols-2 gap-4 text-xs text-gray-400">
         <div>
-          <span className="block text-gray-500">Min Negotiated</span>
-          {formatPrice(filteredRates[0]?.min_negotiated)}
+          <span className="block text-gray-500">
+            {stayRange.normalized ? 'Min (est. stay)' : 'Min Negotiated'}
+          </span>
+          {formatPrice(stayRange.min)}
         </div>
         <div>
-          <span className="block text-gray-500">Max Negotiated</span>
-          {formatPrice(filteredRates[0]?.max_negotiated)}
+          <span className="block text-gray-500">
+            {stayRange.normalized ? 'Max (est. stay)' : 'Max Negotiated'}
+          </span>
+          {formatPrice(stayRange.max)}
         </div>
       </div>
     </div>
   );
 }
 
-function RateRow({ rate, medicareReference }) {
+// Compute min/max across the visible rates, normalizing per-diem entries to
+// an estimated stay total when expectedDays is known. Returns { min, max,
+// normalized } where `normalized` is true if any rate was multiplied by LOS.
+function computeStayRange(rates, expectedDays) {
+  let min = null;
+  let max = null;
+  let normalized = false;
+  for (const r of rates) {
+    if (r.negotiated_rate == null || r.negotiated_rate <= 0) continue;
+    const isPerDiem = (r.methodology || '').toUpperCase() === 'PER DIEM';
+    const value = isPerDiem && expectedDays
+      ? r.negotiated_rate * expectedDays
+      : r.negotiated_rate;
+    if (isPerDiem && expectedDays) normalized = true;
+    if (min == null || value < min) min = value;
+    if (max == null || value > max) max = value;
+  }
+  return { min, max, normalized };
+}
+
+function RateRow({ rate, medicareReference, expectedDays }) {
   const methodology = formatMethodology(rate.methodology);
-  const showVsMedicare =
-    medicareReference != null &&
-    medicareReference > 0 &&
-    rate.negotiated_rate != null &&
-    rate.negotiated_rate > 0;
+  const isPerDiem = methodology === 'Per Diem';
+  const hasNumericRate = rate.negotiated_rate != null && rate.negotiated_rate > 0;
+  const canCompare = medicareReference != null && medicareReference > 0 && hasNumericRate;
+
+  // For per-diem rates the headline number is per-day, not a stay total. We
+  // can only honestly compare it to a Medicare DRG payment if we also know
+  // the typical length of stay (GMLOS), so we estimate stay total = rate × LOS.
+  const perDiemStayTotal = isPerDiem && expectedDays && hasNumericRate
+    ? rate.negotiated_rate * expectedDays
+    : null;
+  const compareValue = isPerDiem ? perDiemStayTotal : rate.negotiated_rate;
+  const showVsMedicare = canCompare && (!isPerDiem || perDiemStayTotal != null);
 
   return (
     <div className="flex items-start justify-between gap-4">
@@ -209,19 +250,44 @@ function RateRow({ rate, medicareReference }) {
       </div>
       <div className="text-right flex-shrink-0">
         <div className="text-xl font-semibold text-gray-900">
-          {rate.negotiated_rate != null
-            ? formatPrice(rate.negotiated_rate)
+          {hasNumericRate
+            ? (
+                <>
+                  {formatPrice(rate.negotiated_rate)}
+                  {isPerDiem && <span className="text-sm font-normal text-gray-500">/day</span>}
+                </>
+              )
             : rate.negotiated_percentage
             ? `${rate.negotiated_percentage}%`
             : '--'}
         </div>
-        {showVsMedicare && <VsMedicareBadge rate={rate.negotiated_rate} medicare={medicareReference} />}
+        {isPerDiem && perDiemStayTotal != null && (
+          <Tooltip text={`Geometric Mean Length of Stay (GMLOS) for this DRG is ${expectedDays} days per CMS — used as a typical-stay estimate.`}>
+            <div className="text-xs text-gray-500 mt-0.5">
+              ≈ {formatPrice(perDiemStayTotal)} for {expectedDays}d stay
+            </div>
+          </Tooltip>
+        )}
+        {showVsMedicare && (
+          <VsMedicareBadge
+            rate={compareValue}
+            medicare={medicareReference}
+            isPerDiemEstimate={isPerDiem}
+            stayDays={expectedDays}
+            dailyRate={rate.negotiated_rate}
+          />
+        )}
+        {isPerDiem && !showVsMedicare && canCompare && (
+          <div className="text-xs text-gray-400 mt-0.5 italic">
+            Per diem — stay total depends on length
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function VsMedicareBadge({ rate, medicare }) {
+function VsMedicareBadge({ rate, medicare, isPerDiemEstimate, stayDays, dailyRate }) {
   const ratio = rate / medicare;
   const pct = Math.round((ratio - 1) * 100);
   const label = pct >= 0 ? `+${pct}% vs Medicare` : `${pct}% vs Medicare`;
@@ -232,8 +298,11 @@ function VsMedicareBadge({ rate, medicare }) {
     : pct <= 300
     ? 'text-amber-600'
     : 'text-rose-600';
+  const tooltip = isPerDiemEstimate
+    ? `Per diem ${formatPrice(dailyRate)}/day × ${stayDays}d typical stay (GMLOS) = est. ${formatPrice(rate)}, which is ${ratio.toFixed(2)}x the Medicare payment for this DRG.`
+    : `Negotiated rate is ${ratio.toFixed(2)}x the estimated total Medicare payment for this code.`;
   return (
-    <Tooltip text={`Negotiated rate is ${ratio.toFixed(2)}x the estimated total Medicare payment for this code.`}>
+    <Tooltip text={tooltip}>
       <div className={`text-xs mt-0.5 ${colorClass}`}>{label}</div>
     </Tooltip>
   );

@@ -250,10 +250,41 @@ app.get('/api/procedure/:code', (req, res) => {
     }
   } catch {}
 
+  // For MS-DRG codes, look up the inpatient DRG payment per hospital.
+  // medicare_drg is structured with per-hospital values because IME/DSH
+  // differ across our 4 Austin hospitals (e.g. Dell Seton's 36.9% IME
+  // teaching premium produces materially higher payments).
+  let medicare_drg = null;
+  try {
+    const drgRow = db.prepare(
+      `SELECT drg_title, type, weight, geometric_mean_los, arithmetic_mean_los, year
+       FROM medicare_drgs WHERE drg_code = ?`
+    ).get(code);
+    if (drgRow) {
+      const rows = db.prepare(
+        `SELECT hospital_id, payment FROM medicare_drg_payments WHERE drg_code = ?`
+      ).all(code);
+      const by_hospital = {};
+      for (const r of rows) by_hospital[r.hospital_id] = r.payment;
+      medicare_drg = {
+        drg_code: code,
+        drg_title: drgRow.drg_title,
+        type: drgRow.type,
+        weight: drgRow.weight,
+        geometric_mean_los: drgRow.geometric_mean_los,
+        arithmetic_mean_los: drgRow.arithmetic_mean_los,
+        year: drgRow.year,
+        by_hospital,
+        source: 'CMS IPPS Operating (FY 2026)',
+      };
+    }
+  } catch {}
+
   res.json({
     code,
     description: results[0].description,
     friendly_name: results[0].friendly_name || null,
+    code_type: results[0].code_type,
     setting: results[0].setting,
     gross_charge: results[0].gross_charge,
     cash_price: results[0].cash_price,
@@ -262,6 +293,7 @@ app.get('/api/procedure/:code', (req, res) => {
     is_percentage_based: anyPercentageBased,
     payers: grouped,
     medicare,
+    medicare_drg,
   });
 });
 

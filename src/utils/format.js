@@ -37,7 +37,8 @@ export function formatPlan(name) {
 }
 
 /**
- * Format methodology for display.
+ * Format methodology for display. Normalizes input to upper-case before map
+ * lookup so e.g. "per diem" and "PER DIEM" both render as "Per Diem".
  */
 export function formatMethodology(method) {
   if (!method) return '';
@@ -48,5 +49,7 @@ export function formatMethodology(method) {
     'PER DIEM': 'Per Diem',
     'OTHER': 'Other',
   };
-  return map[method] || method.charAt(0) + method.slice(1).toLowerCase();
+  const upper = method.toUpperCase();
+  if (map[upper]) return map[upper];
+  return method.charAt(0).toUpperCase() + method.slice(1).toLowerCase();
 }

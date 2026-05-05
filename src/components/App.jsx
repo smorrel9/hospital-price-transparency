@@ -25,11 +25,25 @@ function matchesSetting(rateSetting, filter) {
   return s === filter || s === 'BOTH';
 }
 
-// Compute the same Medicare reference value the banner shows: PFS + OPPS
-// when OPPS is payable, else PFS. Hidden in Inpatient mode (no DRG modeling yet).
-// Returns null when there's nothing useful to compare against.
+// Compute the Medicare reference value to compare a hospital's negotiated rate
+// against. Two flavors:
+//   - For DRG codes: per-hospital payment (IME/DSH vary by hospital)
+//   - For CPT/HCPCS codes: single Austin-adjusted total (PFS + OPPS when payable)
+// Pass hospitalId for DRG lookups; not needed for the CPT/OPPS path.
 const PAYABLE_OPPS_SI = new Set(['J1', 'J2', 'T', 'S', 'V', 'Q1', 'Q2', 'Q3', 'P', 'R', 'S1', 'U']);
-export function getMedicareReference(medicare, selectedSetting) {
+export function getMedicareReference(procedureData, selectedSetting, hospitalId = null) {
+  if (!procedureData) return null;
+
+  // DRG codes have per-hospital Medicare payments; the toggle doesn't gate them
+  // because DRG procedures are inherently inpatient.
+  const drg = procedureData.medicare_drg;
+  if (drg && hospitalId && drg.by_hospital) {
+    const pay = drg.by_hospital[hospitalId];
+    return pay > 0 ? pay : null;
+  }
+
+  // CPT/HCPCS path — PFS + OPPS combined when the SI is payable.
+  const medicare = procedureData.medicare;
   if (!medicare) return null;
   if (selectedSetting === 'INPATIENT') return null;
   const pfs = medicare.facility_rate || 0;
@@ -77,6 +91,9 @@ export default function App() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to load procedure');
         setProcedureData(data);
+        // Auto-pin setting to Inpatient for DRG procedures since DRGs are
+        // inherently inpatient and the All/Outpatient toggles wouldn't apply.
+        if (data?.medicare_drg) setSelectedSetting('INPATIENT');
       } catch (err) {
         setError(err.message);
         setProcedureData(null);
@@ -167,7 +184,6 @@ export default function App() {
 
   const byHospital = groupByHospital();
   const hospitalIds = Object.keys(byHospital);
-  const medicareReference = getMedicareReference(procedureData?.medicare, selectedSetting);
 
   // Determine which settings have any rates for this procedure
   const availableSettings = { OUTPATIENT: false, INPATIENT: false };
@@ -235,7 +251,11 @@ export default function App() {
             </div>
 
             {/* Medicare reference bar */}
-            <MedicareBanner medicare={procedureData.medicare} selectedSetting={selectedSetting} />
+            <MedicareBanner
+              medicare={procedureData.medicare}
+              medicareDrg={procedureData.medicare_drg}
+              selectedSetting={selectedSetting}
+            />
 
             {/* Setting toggle */}
             <SettingToggle
@@ -256,6 +276,13 @@ export default function App() {
                   // Cash price ignores the setting filter so it always reflects the
                   // hospital's posted self-pay rate for this procedure.
                   const cashRange = findCashPriceRange(allRates);
+                  // Medicare reference is per-hospital for DRG codes (IME/DSH vary)
+                  // and shared across hospitals for CPT/OPPS codes.
+                  const medicareReference = getMedicareReference(procedureData, selectedSetting, hid);
+                  // For DRG codes, we know the typical stay length. Used to
+                  // multiply per-diem rates so they're comparable to the
+                  // Medicare stay-total, not falsely under-stated as $/day.
+                  const expectedDays = procedureData?.medicare_drg?.geometric_mean_los || null;
                   return (
                     <HospitalCard
                       key={hid}
@@ -263,6 +290,7 @@ export default function App() {
                       rates={rates}
                       cashRange={cashRange}
                       medicareReference={medicareReference}
+                      expectedDays={expectedDays}
                       hospitalName={HOSPITAL_NAMES[hid] || hid}
                       colorIndex={i}
                     />

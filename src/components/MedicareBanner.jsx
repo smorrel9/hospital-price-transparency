@@ -25,9 +25,14 @@ function classifySI(si) {
   return 'not_paid';
 }
 
-export default function MedicareBanner({ medicare, selectedSetting = 'ALL' }) {
-  if (!medicare) return null;
+export default function MedicareBanner({ medicare, medicareDrg, selectedSetting = 'ALL' }) {
+  // DRG-based inpatient procedures use a different banner shape because the
+  // Medicare payment varies per hospital (IME/DSH adjustments).
+  if (medicareDrg && medicareDrg.by_hospital) {
+    return <DrgBanner drg={medicareDrg} />;
+  }
 
+  if (!medicare) return null;
   const pfs = medicare.facility_rate || 0;
   const opps = medicare.opps;
   const oppsClass = classifySI(opps?.status_indicator);
@@ -101,6 +106,62 @@ export default function MedicareBanner({ medicare, selectedSetting = 'ALL' }) {
         </div>
         <div className="text-right flex-shrink-0">
           <div className="text-2xl font-bold text-green-700">{formatPrice(total)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DrgBanner({ drg }) {
+  const payments = Object.values(drg.by_hospital || {}).filter(v => v > 0);
+  if (payments.length === 0) return null;
+  const min = Math.min(...payments);
+  const max = Math.max(...payments);
+  const avg = payments.reduce((a, b) => a + b, 0) / payments.length;
+  const isRange = min !== max;
+
+  const tooltip = [
+    `CMS IPPS operating payment for MS-DRG ${drg.drg_code} (FY ${drg.year || 2026}).`,
+    `Calculated as: federal standardized amount × DRG weight (${drg.weight}) × wage-adjusted base × (1 + IME) × (1 + DSH).`,
+    `Each Austin hospital has different IME (teaching) and DSH (low-income patient) factors, which is why the range exists.`,
+    `Does not include capital payment (~5-7% extra) or outlier/UCP add-ons. Negotiated rates above are compared to each hospital's specific Medicare amount.`,
+  ].join(' ');
+
+  return (
+    <div className="bg-green-50 border border-green-200 rounded-lg px-5 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-green-700 font-semibold text-sm">Estimated Inpatient Medicare</span>
+            <Tooltip text={tooltip}>
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-200 text-green-700 text-xs cursor-help">
+                ?
+              </span>
+            </Tooltip>
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            MS-DRG {drg.drg_code} &middot; weight {drg.weight}
+            {drg.geometric_mean_los != null && ` · GMLOS ${drg.geometric_mean_los}d`}
+            {drg.year && ` · FY ${drg.year}`}
+          </div>
+          <div className="text-xs text-green-800 mt-1.5 italic">
+            Operating IPPS only — capital payment (~5-7%) and outlier/UCP add-ons not included.
+            Per-hospital Medicare values are used for the % vs Medicare badges below.
+          </div>
+        </div>
+        <div className="text-right flex-shrink-0">
+          {isRange ? (
+            <>
+              <div className="text-2xl font-bold text-green-700">
+                {formatPrice(min)} – {formatPrice(max)}
+              </div>
+              <div className="text-xs text-green-700 mt-0.5">
+                avg {formatPrice(avg)} across {payments.length} hospitals
+              </div>
+            </>
+          ) : (
+            <div className="text-2xl font-bold text-green-700">{formatPrice(min)}</div>
+          )}
         </div>
       </div>
     </div>
