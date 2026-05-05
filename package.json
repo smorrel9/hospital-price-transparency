@@ -16,7 +16,8 @@
     "build-names": "node scripts/build-friendly-names.js",
     "fetch-medicare": "node scripts/fetch-medicare.js",
     "fetch-opps": "node scripts/fetch-opps.js",
-    "setup": "npm run fetch-data && npm run parse-data && npm run seed-db && npm run build-names && npm run fetch-medicare && npm run fetch-opps"
+    "fetch-drg": "node scripts/fetch-drg.js",
+    "setup": "npm run fetch-data && npm run parse-data && npm run seed-db && npm run build-names && npm run fetch-medicare && npm run fetch-opps && npm run fetch-drg"
   },
   "keywords": [
     "healthcare",
