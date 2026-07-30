@@ -173,6 +173,13 @@ async function parseFile(filepath) {
         revCode = rcSlot?.code || (record.code_type?.toUpperCase() === 'RC' ? record.code : record.rev_code);
       }
 
+      // HCPCS Level II codes are alphanumeric (letter prefix + 4 digits).
+      // A purely 5-digit numeric code labeled HCPCS is actually CPT.
+      // BSW's file consistently mislabels CPT codes as HCPCS in code|3 — this promotes them.
+      if (codeType === 'HCPCS' && /^\d{5}$/.test(code)) {
+        codeType = 'CPT';
+      }
+
       // Parse numeric fields
       const parsed = {
         description: record.description,

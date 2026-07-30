@@ -137,7 +137,7 @@ The pipeline maps raw CMS CSV columns to this schema on ingest.
 |---|---|---|---|
 | `description` | `procedures` | `description` | Raw; use for `display_name` in Phase 2 |
 | `code` | `procedures` | `code` | Strip whitespace |
-| `code_type` | `procedures` | `code_type` | Normalize to uppercase |
+| `code_type` | `procedures` | `code_type` | Normalize to uppercase; promote 5-digit numeric HCPCS → CPT (see below) |
 | `standard_charge_gross` | `rates` | `amount` | `rate_type = 'gross'` |
 | `standard_charge_discounted_cash` | `rates` | `amount` | `rate_type = 'cash'` |
 | `standard_charge_negotiated_dollar` | `rates` | `amount` | `rate_type = 'negotiated'` |
@@ -145,6 +145,14 @@ The pipeline maps raw CMS CSV columns to this schema on ingest.
 | `standard_charge_max` | `rates` | `amount` | `rate_type = 'max'` |
 | `payer_name` | `rates` | `payer_name` | Raw; normalize in Phase 2 |
 | `plan_name` | `rates` | `plan_name` | Raw |
+
+### Code type normalization
+
+HCPCS Level II codes are always alphanumeric — a letter prefix followed by four digits (e.g., `J0130`, `C9740`, `G0121`). Any 5-digit purely numeric code is by definition CPT, regardless of how the source file labels it.
+
+Some hospital files (notably Baylor Scott & White Austin) label large blocks of CPT codes as HCPCS in the source data. Left alone, ~400k procedure rows are effectively hidden from CPT searches — a user searching by CPT code sees zero results for procedures the hospital actually publishes. Cross-hospital comparison drops from 6,555 shared CPT codes to 15.
+
+The parser therefore promotes any row where `code_type === 'HCPCS'` and `code` matches `/^\d{5}$/` to `code_type = 'CPT'`. Applied universally in `scripts/parse-csv.js` after the code-slot selection step. Safe for all hospitals because valid HCPCS Level II codes never match that pattern.
 
 ### Pseudocode
 
