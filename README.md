@@ -1,6 +1,8 @@
 # Hospital Price Transparency Tool
 
-A web app that transforms CMS-mandated hospital pricing files into a searchable, consumer-friendly interface.
+A web app that transforms CMS-mandated hospital pricing files into a searchable, consumer-friendly interface — with a Medicare baseline so patients can see not just what a hospital charges, but how that compares to what Medicare pays for the same procedure.
+
+**Live at [texashealthprices.org](https://texashealthprices.org)** (also reachable at [hospital-price-transparency.fly.dev](https://hospital-price-transparency.fly.dev)).
 
 ## The Problem
 
@@ -10,11 +12,13 @@ This tool bridges the gap between regulatory compliance and consumer utility.
 
 ## What It Does
 
-- Parses hospital machine-readable pricing files (CSV format, following CMS standard charge schema)
-- Lets users search by procedure name, CPT/HCPCS code, or plain-language description
-- Displays prices across payers (insurance plans) in a clear comparison view
-- Highlights cash/self-pay prices alongside negotiated rates
-- Starts with Ascension Seton Medical Center Austin as the proof-of-concept hospital
+- Autocomplete search by plain-language procedure name (not just raw CPT/HCPCS codes), backed by SQLite full-text search with BM25 ranking
+- Compares prices for the same procedure across 4 Austin-area hospitals side by side
+- Insurance/payer picker, grouped by category (BCBS, Aetna, United, etc.)
+- Highlights the cash/self-pay price (with its range) alongside negotiated rates
+- Care setting toggle — All / Outpatient / Inpatient
+- **Medicare comparison banner**: estimates the total Medicare payment for the same procedure — PFS physician fee + OPPS hospital facility fee for outpatient, or the IPPS DRG-based bundled payment (with per-hospital IME/DSH adjustments) for inpatient — and shows a "% vs Medicare" badge on each insurance rate
+- Handles all OPPS status indicators (payable, packaged, alternate fee schedule, inpatient-only) with plain-language explanations rather than raw codes
 
 ## Architecture
 
@@ -22,16 +26,20 @@ This tool bridges the gap between regulatory compliance and consumer utility.
 ┌─────────────────────────────────────────────────┐
 │                  React Frontend                  │
 │  Search bar → Results table → Price comparison   │
+│  + Medicare banner, insurance picker, setting     │
+│    toggle                                         │
 └────────────────────┬────────────────────────────┘
                      │ REST API
 ┌────────────────────▼────────────────────────────┐
 │               Node.js Backend                    │
-│  Express API → Search/filter → Paginated results │
+│  Express API → Search/filter → Medicare lookup    │
+│  (PFS + OPPS + DRG) → Payer-grouped results       │
 └────────────────────┬────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────┐
 │              Data Pipeline                       │
-│  Fetch CSV → Parse → Normalize → SQLite/JSON     │
+│  Fetch hospital MRFs + CMS PFS/OPPS/DRG files →   │
+│  Parse → Normalize → Friendly names → SQLite      │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -41,58 +49,48 @@ This tool bridges the gap between regulatory compliance and consumer utility.
 hospital-price-transparency/
 ├── README.md
 ├── package.json
+├── fly.toml                        # Fly.io deployment config
 ├── scripts/
-│   ├── fetch-data.js          # Download MRF files from hospital sites
-│   ├── parse-csv.js           # Parse and normalize raw CSV data
-│   └── seed-db.js             # Load parsed data into SQLite
+│   ├── fetch-data.js               # Download hospital MRF files
+│   ├── parse-csv.js                # Parse/normalize CSV-format MRFs
+│   ├── parse-json.js               # Parse/normalize JSON-format MRFs
+│   ├── seed-db.js                  # Load parsed data into SQLite
+│   ├── build-friendly-names.js     # CPT/HCPCS code → plain-language name mapping
+│   ├── fetch-medicare.js           # CMS Physician Fee Schedule (facility/non-facility rates)
+│   ├── fetch-opps.js               # CMS OPPS Addendum B (hospital outpatient facility fees)
+│   └── fetch-drg.js                # CMS IPPS DRG payments (inpatient, per-hospital)
 ├── src/
-│   ├── server.js              # Express API server
+│   ├── server.js                   # Express API server
 │   ├── components/
-│   │   ├── App.jsx            # Main app shell
-│   │   ├── SearchBar.jsx      # Procedure/code search input
-│   │   ├── ResultsTable.jsx   # Price comparison table
-│   │   └── PriceCard.jsx      # Individual procedure price display
+│   │   ├── App.jsx
+│   │   ├── AutocompleteSearch.jsx
+│   │   ├── SearchBar.jsx
+│   │   ├── ResultsTable.jsx
+│   │   ├── HospitalCard.jsx
+│   │   ├── PriceCard.jsx
+│   │   ├── InsurancePicker.jsx
+│   │   ├── SettingToggle.jsx
+│   │   ├── MedicareBanner.jsx
+│   │   └── Tooltip.jsx
 │   ├── utils/
-│   │   ├── normalize.js       # Standardize procedure names, codes
-│   │   ├── search.js          # Search/filter logic
-│   │   └── format.js          # Currency, percentage formatting
+│   │   └── format.js
 │   └── data/
-│       └── hospitals.json     # Hospital metadata (name, URL, file location)
 ├── public/
 │   └── index.html
 ├── .gitignore
-├── .env.example
 └── LICENSE
 ```
 
-## Roadmap
-
-### Phase 1: Single Hospital Proof of Concept
-- [x] Project skeleton and architecture
-- [ ] Download and parse Ascension Seton Medical Center Austin CSV
-- [ ] Build search API with basic text matching
-- [ ] Minimal React UI: search bar + results table
-- [ ] Deploy static demo
-
-### Phase 2: Make It Useful
-- [ ] Add 2-3 more Austin-area hospitals for comparison
-- [ ] Plain-language procedure name mapping (CPT code → "Knee MRI")
-- [ ] Filter by payer/insurance plan
-- [ ] Price range visualization
-- [ ] "What is this?" tooltips for billing terminology
-
-### Phase 3: Scale and Polish
-- [ ] Generalized CSV parser handling schema variations across hospitals
-- [ ] Automated data refresh pipeline
-- [ ] Full-text search with fuzzy matching
-- [ ] Cost estimator (procedure price + facility fee + common add-ons)
-- [ ] Responsive mobile design
-
 ## Data Sources
 
-| Hospital | Location | File Format | URL |
-|----------|----------|-------------|-----|
-| Ascension Seton Medical Center Austin | Austin, TX | CSV | [Link](https://healthcare.ascension.org/-/media/project/ascension/healthcare/price-transparency-files/tx-csv/741109643-1164526786_ascension-seton_standardcharges.csv) |
+| Hospital | Location |
+|----------|----------|
+| Ascension Seton Medical Center Austin | Austin, TX |
+| Dell Seton Medical Center at UT Austin | Austin, TX |
+| Baylor Scott & White Medical Center Austin | Austin, TX |
+| St. David's Medical Center Austin | Austin, TX |
+
+Plus CMS reference data: Physician Fee Schedule (RVU file), OPPS Addendum B (quarterly), and IPPS DRG payment tables — used to compute the Medicare comparison baseline.
 
 ## CMS Standard Charge Schema
 
@@ -107,29 +105,36 @@ Each row typically includes a billing code (CPT, HCPCS, DRG, or internal), a des
 
 ## Tech Stack
 
-- **Frontend**: React, Tailwind CSS
+- **Frontend**: React, Vite, Tailwind CSS
 - **Backend**: Node.js, Express
-- **Data**: SQLite (via better-sqlite3) for local development
-- **Parsing**: csv-parse for streaming CSV processing
-- **Search**: Fuse.js for fuzzy matching
+- **Data**: SQLite (via better-sqlite3)
+- **Parsing**: csv-parse (streaming) / stream-json for the two MRF file formats hospitals publish in
+- **Search**: SQLite FTS5 with BM25 ranking over plain-language procedure names — no external search library
+- **Deployment**: Fly.io (region: dfw), SQLite on a persistent volume
 
 ## Getting Started
 
 ```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/hospital-price-transparency.git
+git clone https://github.com/smorrel9/hospital-price-transparency.git
 cd hospital-price-transparency
-
-# Install dependencies
 npm install
 
-# Download and parse hospital data
-npm run fetch-data
-npm run parse-data
+# Full data pipeline: hospital MRFs + CMS Medicare reference data (~30 min,
+# downloads ~1GB and parses 30M+ rows)
+npm run setup
 
-# Start the dev server
 npm run dev
 ```
+
+## Roadmap
+
+Shipped: 4-hospital comparison, friendly-name search, insurance picker, care setting toggle, full Medicare baseline (PFS + OPPS + DRG) with % vs Medicare badges, live deployment.
+
+Open ideas:
+- Generalized CSV/JSON parser hardening as more hospitals are added
+- Automated annual data refresh pipeline
+- Cost estimator (procedure price + facility fee + common add-ons)
+- A companion site-of-service tool (office vs. ASC vs. hospital outpatient) is in progress as a separate project: [site-of-service-comparison](https://github.com/smorrel9/site-of-service-comparison)
 
 ## Why This Matters
 
