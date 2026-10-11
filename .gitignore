@@ -14,4 +14,5 @@ data/*.xlsx
 dist/
 .venv/
 analysis/
+.sprite
 
