@@ -8,16 +8,19 @@ This is deliberately a manual, on-demand setup, not a standing service. Spin the
 
 ```bash
 # Install the CLI
-curl https://sprites.dev/install.sh | bash
+curl -fsSL https://sprites.dev/install.sh | bash
 sprite --help
 
-# Authenticate against your Fly.io org
-sprite org auth
+# Authenticate (opens a browser) -- run this one yourself, it needs a
+# real interactive terminal, not something Claude Code can do on your behalf
+sprite login
 
 # Create a Sprite for this project
 sprite create hpt-pipeline
 sprite use hpt-pipeline
 ```
+
+(`sprite org auth` also exists, but that's for adding a pre-generated API token -- a CI/non-interactive path. `sprite login` is the normal one-time setup.)
 
 `sprite use` writes a local `.sprite` file pointing commands at this Sprite by default, so you don't have to pass `--sprite hpt-pipeline` every time.
 
@@ -31,6 +34,17 @@ sprite exec -- bash -c "cd hospital-price-transparency && npm install"
 ```
 
 If you have uncommitted local changes you want on the Sprite too, commit and push them first -- there isn't a reason to build a separate sync mechanism for an occasional-use sandbox.
+
+**Gotcha: `npm install` silently skips native builds on a fresh Sprite.** Sprites block `install`/`postinstall` lifecycle scripts by default (a supply-chain security measure) -- `npm install` will warn about it but exit 0, so it's easy to miss. This means `better-sqlite3`'s native binary never gets compiled, and anything touching the DB (`seed-db`, `server`) will fail with a missing-module error. Fix:
+
+```bash
+sprite exec -- bash -c "cd hospital-price-transparency && npm install-scripts approve better-sqlite3 esbuild && npm rebuild better-sqlite3"
+```
+
+Verify before trusting anything else:
+```bash
+sprite exec -- bash -c "cd hospital-price-transparency && node -e \"require('better-sqlite3')(':memory:')\""
+```
 
 ## Run Claude Code inside the Sprite
 
