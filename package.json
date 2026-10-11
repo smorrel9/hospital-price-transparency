@@ -10,6 +10,7 @@
     "client": "vite",
     "build": "vite build",
     "fetch-data": "node scripts/fetch-data.js",
+    "preflight": "node scripts/preflight-check.js",
     "parse-data": "node scripts/parse-csv.js",
     "parse-data-wide": "node scripts/parse-csv-wide.js",
     "parse-json": "node scripts/parse-json.js",

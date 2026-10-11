@@ -14,11 +14,19 @@ Run this from a Claude Code session with access to this repo -- either locally, 
    ```
    Downloads every hospital in the manifest that has a `source_url` and doesn't already have a raw file on disk -- safe to re-run as you add hospitals one at a time, since it skips anything already fetched. Pass `--force` to re-download everything (e.g. after a CMS annual refresh). Lands in `data/raw/<hospital-id>.csv` or `.json`.
 
-3. **Map the schema.** Ask Claude Code to run the `schema-mapper` subagent against the new file. It proposes a column mapping and flags quirks (mislabeled code types, unmapped columns), writing `data/column-maps/<hospital-id>.json` if an override is needed. **Review this before continuing** -- it's a diff against the default `COLUMN_MAP` in `scripts/parse-csv.js`, not a full replacement, so a short review is usually enough.
+3. **Pre-flight check.**
+   ```bash
+   npm run preflight -- <hospital-id>
+   ```
+   Seconds, not minutes -- samples a few thousand rows/items from the raw file (not a full parse) and checks the two things that have actually caused rework in this pipeline:
+   - **Layout** (CSV only): "tall" (generic `payer_name`/`plan_name` columns, one row per procedure+payer+plan -- what the Austin hospitals use) vs "wide" (payer+plan baked into column names like `standard_charge|Aetna|HMO_Inpatient|negotiated_dollar`, one row per procedure -- what MD Anderson uses). Wide needs `npm run parse-data-wide` in step 5, not `parse-data`.
+   - **Code-type mislabeling**: for each labeled code type, whether its sampled codes actually match that type's expected shape (5-digit-numeric codes labeled "HCPCS" should be CPT -- the BSW and Houston Methodist pattern). It specifically keeps scanning past category-heavy sections (e.g. a file that lists thousands of pharmacy/NDC items before any procedure code) rather than just sampling the first N rows, since that's exactly how the Houston Methodist mislabeling went undetected on a naive sample.
 
-   Also check the file's **layout**: CMS v3.0.0 allows both "tall" (generic `payer_name`/`plan_name` columns, one row per procedure+payer+plan -- what the Austin hospitals use) and "wide" (payer+plan baked into column names like `standard_charge|Aetna|HMO_Inpatient|negotiated_dollar`, one row per procedure -- what MD Anderson uses, likely at any hospital with many payer contracts). A header row with no literal `payer_name` column is wide format and needs step 4's second script.
+   A clean pre-flight run doesn't guarantee the full parse will be perfect, but both real bugs hit so far would have surfaced here in seconds instead of after a full parse+seed cycle. If it flags something, that's the signal to write a `data/column-maps/<hospital-id>.json` override (see format below) before continuing.
 
-4. **Parse.**
+4. **Map the schema, if pre-flight flagged anything.** Ask Claude Code to run the `schema-mapper` subagent against the new file, informed by the pre-flight findings. It proposes a column mapping and promotion rule, writing `data/column-maps/<hospital-id>.json`. **Review this before continuing** -- it's a diff against the default `COLUMN_MAP` in `scripts/parse-csv.js`, not a full replacement, so a short review is usually enough. If pre-flight came back clean, this step can usually be skipped.
+
+5. **Parse.**
    ```bash
    npm run parse-data        # CSV, tall layout
    npm run parse-data-wide   # CSV, wide layout (payer/plan in column names)
@@ -26,20 +34,20 @@ Run this from a Claude Code session with access to this repo -- either locally, 
    ```
    Streams the raw file to `data/parsed/<hospital-id>.ndjson`, applying the column map and any code-type promotion rules. Running the wrong script against a file just logs a "detected X layout, skipping" message and leaves any existing output untouched -- it won't clobber anything.
 
-5. **QA.** Ask Claude Code to run the `data-qa` subagent against the new NDJSON. It checks row survival rate, code-type distribution, price sanity, null rates, cross-hospital code overlap, and payer-name hygiene, then writes `data/qa-reports/<hospital-id>.md` with a pass/flag verdict and a recommendation. **Read the recommendation before seeding** -- this is the check that would have caught the BSW mislabeling bug before it shipped.
+6. **QA.** Ask Claude Code to run the `data-qa` subagent against the new NDJSON. It checks row survival rate, code-type distribution, price sanity, null rates, cross-hospital code overlap, and payer-name hygiene, then writes `data/qa-reports/<hospital-id>.md` with a pass/flag verdict and a recommendation. **Read the recommendation before seeding** -- this is the full-data check behind pre-flight's quick sample, and it's still worth running even after a clean pre-flight.
 
-6. **Seed.**
+7. **Seed.**
    ```bash
    npm run seed-db
    ```
    Rebuilds `data/prices.db` from everything in `data/parsed/`. (Full rebuild, not incremental -- fine at pilot scale; revisit if this gets slow at 20+ hospitals.)
 
-7. **Update the manifest status** to `seeded` for the hospital in `data/hospitals.json`, and rebuild friendly names / FTS if needed:
+8. **Update the manifest status** to `seeded` for the hospital in `data/hospitals.json`, and rebuild friendly names / FTS if needed:
    ```bash
    npm run build-names
    ```
 
-8. **Deploy.** Same as always -- `fly deploy` (or whatever your current Fly.io deploy step is) once `data/prices.db` looks right locally.
+9. **Deploy.** Same as always -- `fly deploy` (or whatever your current Fly.io deploy step is) once `data/prices.db` looks right locally.
 
 ## Manifest status values
 
