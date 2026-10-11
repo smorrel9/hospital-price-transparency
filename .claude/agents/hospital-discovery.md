@@ -19,7 +19,7 @@ A hospital name, plus whatever the caller knows: city/state, health system (e.g.
 4. **Detect format and compression** from the URL extension / `Content-Type`: `csv` or `json`; `compressed: true` if it's a `.zip`.
 5. **Extract the EIN** from the filename if present.
 6. **If more than one plausible URL turns up, or nothing resolves cleanly, stop and ask** rather than guessing -- a wrong MRF URL silently breaks the whole pipeline downstream and is hard to notice later.
-7. **Write the entry** into `data/hospitals.json` (read the file first, this is a single JSON array edit): `id` (kebab-case, e.g. `methodist-dallas`), `name`, `ein`, `city`, `state`, `source_url`, `format`, `compressed`, `status: "discovered"`, `column_map_file: null`, `notes: null`.
+7. **`git pull` before writing**, then write the entry into `data/hospitals.json` (read the file first, this is a single JSON array edit): `id` (kebab-case, e.g. `methodist-dallas`), `name`, `ein`, `city`, `state`, `source_url`, `format`, `compressed`, `status: "discovered"`, `column_map_file: null`, `notes: null`. If another session (a different Sprite, a teammate) is working on a different hospital in parallel, they may have pushed a new entry to this same file since you last pulled -- pulling first avoids a rejected push later, or worse, silently clobbering their entry if you don't notice the rejection.
 
 ## Output
 

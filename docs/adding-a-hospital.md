@@ -4,9 +4,13 @@ This is the on-demand workflow for growing coverage past the original 4 Austin h
 
 Run this from a Claude Code session with access to this repo -- either locally, or inside a Fly.io Sprite (see `docs/sprites-setup.md`) if you'd rather not pull multi-GB files onto your laptop.
 
+## Working in parallel (multiple Sprites / teammates)
+
+`data/hospitals.json` is the one file every session touches, no matter which hospital it's working on -- it's the collision point if more than one Sprite or teammate is adding hospitals at the same time. `git pull` before any step that writes to it (discovery writing a new entry, updating status to `seeded`, etc.) -- a stale push just gets rejected by git, so this isn't a data-loss risk, but pulling first avoids the rejection (and the pause to sort it out) entirely. This is already built into the `hospital-discovery` subagent's own steps; the manual status-update steps below need the same habit.
+
 ## Steps
 
-1. **Add the hospital.** Tell Claude Code the hospital name (and city/state or health system if you know it). It should invoke the `hospital-discovery` subagent, which finds the CMS MRF URL, verifies it resolves, and writes an entry to `data/hospitals.json` with `status: "discovered"`.
+1. **Add the hospital.** Tell Claude Code the hospital name (and city/state or health system if you know it). It should invoke the `hospital-discovery` subagent, which finds the CMS MRF URL, verifies it resolves, pulls, and writes an entry to `data/hospitals.json` with `status: "discovered"`.
 
 2. **Fetch the raw file.**
    ```bash
@@ -42,7 +46,7 @@ Run this from a Claude Code session with access to this repo -- either locally, 
    ```
    Rebuilds `data/prices.db` from everything in `data/parsed/`. (Full rebuild, not incremental -- fine at pilot scale; revisit if this gets slow at 20+ hospitals.)
 
-8. **Update the manifest status** to `seeded` for the hospital in `data/hospitals.json`, and rebuild friendly names / FTS if needed:
+8. **`git pull`, then update the manifest status** to `seeded` for the hospital in `data/hospitals.json` (see "Working in parallel" above), and rebuild friendly names / FTS if needed:
    ```bash
    npm run build-names
    ```
