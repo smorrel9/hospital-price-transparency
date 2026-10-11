@@ -136,7 +136,7 @@ Full walkthrough in [`docs/adding-a-hospital.md`](docs/adding-a-hospital.md). Fo
 - **Parsing**: csv-parse (streaming) / stream-json for the two MRF file formats hospitals publish in
 - **Search**: SQLite FTS5 with BM25 ranking over plain-language procedure names — no external search library
 - **Deployment**: Fly.io (region: dfw), SQLite on a persistent volume
-- **Pipeline tooling**: Fly.io Sprites — optional, on-demand sandbox for running the hospital-onboarding subagents and multi-GB MRF downloads/parses off your laptop (see [Adding a Hospital](#adding-a-hospital))
+- **Pipeline tooling**: Fly.io Sprites — optional, on-demand sandbox that runs the hospital-onboarding subagents and multi-GB MRF downloads/parses in their own isolated VM instead of your laptop, with checkpoint/restore as a built-in undo button (see [Adding a Hospital](#adding-a-hospital))
 
 ## Getting Started
 
