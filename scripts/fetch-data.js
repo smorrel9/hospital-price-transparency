@@ -1,48 +1,28 @@
 /**
  * fetch-data.js
- * Downloads hospital MRF (machine-readable file) CSVs.
- * Handles ZIP-compressed files (Ascension serves a ZIP, not raw CSV).
+ * Downloads hospital MRF (machine-readable file) CSVs/JSON listed in
+ * data/hospitals.json. Handles ZIP-compressed files (Ascension serves
+ * a ZIP, not raw CSV) and renames the extracted file to <hospital-id>
+ * so downstream scripts never need a filename-to-id lookup table.
  *
  * Usage: npm run fetch-data
  */
 
-import { createWriteStream, mkdirSync } from 'fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'fs';
 import { pipeline } from 'stream/promises';
 import path from 'path';
 import { execSync } from 'child_process';
 
 const RAW_DIR = path.join(process.cwd(), 'data', 'raw');
+const MANIFEST_PATH = path.join(process.cwd(), 'data', 'hospitals.json');
 
-const HOSPITALS = [
-  {
-    id: 'ascension-seton-austin',
-    name: 'Ascension Seton Medical Center Austin',
-    url: 'https://healthcare.ascension.org/-/media/project/ascension/healthcare/price-transparency-files/tx-csv/741109643-1164526786_ascension-seton_standardcharges.csv',
-    compressed: true,
-    format: 'csv',
-  },
-  {
-    id: 'dell-seton-austin',
-    name: 'Dell Seton Medical Center at UT Austin',
-    url: 'https://healthcare.ascension.org/-/media/project/ascension/healthcare/price-transparency-files/tx-csv/741109643-1093810327_ascension-seton_standardcharges.csv',
-    compressed: true,
-    format: 'csv',
-  },
-  {
-    id: 'bsw-austin',
-    name: 'Baylor Scott & White Medical Center Austin',
-    url: 'https://wadcdn.azureedge.net/bswhealth/com/siteassets/pricing-transparency/813040663_baylor-scott--white-medical-center--austin_standardcharges.csv',
-    compressed: false,
-    format: 'csv',
-  },
-  {
-    id: 'st-davids-austin',
-    name: "St. David's Medical Center Austin",
-    url: "https://stctrprodsnsvc00455826e6.blob.core.windows.net/pt-final-posting-files/74-2781812_ST.-DAVID'S-MEDICAL-CENTER_standardcharges.json?si=pt-json-access-policy&spr=https&sv=2024-11-04&sr=c&sig=o5IofreS%2F7ETlsnhPakPWCwHVVUZRobywQ5wUKGjVuQ%3D",
-    compressed: false,
-    format: 'json',
-  },
-];
+function loadManifest() {
+  return JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8'));
+}
+
+function saveManifest(manifest) {
+  writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n');
+}
 
 async function downloadFile(hospital) {
   const fileExt = hospital.format === 'json' ? '.json' : '.csv';
@@ -50,9 +30,9 @@ async function downloadFile(hospital) {
   const outPath = path.join(RAW_DIR, `${hospital.id}${ext}`);
 
   console.log(`[fetch] ${hospital.name}`);
-  console.log(`  URL: ${hospital.url}`);
+  console.log(`  URL: ${hospital.source_url}`);
 
-  const res = await fetch(hospital.url, {
+  const res = await fetch(hospital.source_url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; HospitalPriceTransparency/1.0)',
       'Accept': 'text/csv,application/zip,*/*',
@@ -60,7 +40,7 @@ async function downloadFile(hospital) {
   });
 
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} for ${hospital.url}`);
+    throw new Error(`HTTP ${res.status} for ${hospital.source_url}`);
   }
 
   const dest = createWriteStream(outPath);
@@ -69,11 +49,23 @@ async function downloadFile(hospital) {
   const sizeMB = (dest.bytesWritten / 1024 / 1024).toFixed(1);
   console.log(`  Downloaded: ${sizeMB} MB -> ${path.basename(outPath)}`);
 
-  // Extract ZIP if needed
+  // Extract ZIP if needed, then rename whatever came out to <id><fileExt>
+  // so it matches the raw filename convention non-zipped hospitals already use.
   if (hospital.compressed) {
     console.log('  Extracting ZIP...');
+    const before = new Set(readdirSync(RAW_DIR));
     execSync(`unzip -o -d "${RAW_DIR}" "${outPath}"`, { stdio: 'pipe' });
-    console.log('  Extracted.');
+    const after = readdirSync(RAW_DIR);
+    const extracted = after.find(f => !before.has(f) && f.endsWith(fileExt));
+
+    const finalPath = path.join(RAW_DIR, `${hospital.id}${fileExt}`);
+    if (extracted) {
+      renameSync(path.join(RAW_DIR, extracted), finalPath);
+      console.log(`  Extracted and renamed: ${extracted} -> ${hospital.id}${fileExt}`);
+    } else {
+      console.log(`  Extracted, but could not identify the new ${fileExt} file -- check data/raw/ manually.`);
+    }
+    return finalPath;
   }
 
   return outPath;
@@ -82,14 +74,31 @@ async function downloadFile(hospital) {
 async function main() {
   mkdirSync(RAW_DIR, { recursive: true });
 
-  for (const hospital of HOSPITALS) {
+  const force = process.argv.includes('--force');
+  const manifest = loadManifest();
+
+  for (const hospital of manifest.hospitals) {
+    if (!hospital.source_url) {
+      console.log(`[fetch] ${hospital.name}: no source_url yet (status=${hospital.status}), skipping`);
+      continue;
+    }
+
+    const fileExt = hospital.format === 'json' ? '.json' : '.csv';
+    const finalPath = path.join(RAW_DIR, `${hospital.id}${fileExt}`);
+    if (!force && existsSync(finalPath)) {
+      console.log(`[fetch] ${hospital.name}: ${hospital.id}${fileExt} already on disk, skipping (use --force to re-download)`);
+      continue;
+    }
+
     try {
       await downloadFile(hospital);
+      hospital.last_fetched_at = new Date().toISOString();
     } catch (err) {
       console.error(`  FAILED: ${err.message}`);
     }
   }
 
+  saveManifest(manifest);
   console.log('\nDone. Run "npm run parse-data" next.');
 }
 

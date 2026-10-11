@@ -16,18 +16,56 @@
  * Usage: npm run parse-data
  */
 
-import { createReadStream, createWriteStream, mkdirSync, readdirSync } from 'fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync } from 'fs';
 import { parse } from 'csv-parse';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const RAW_DIR = path.join(process.cwd(), 'data', 'raw');
 const PARSED_DIR = path.join(process.cwd(), 'data', 'parsed');
+const COLUMN_MAPS_DIR = path.join(process.cwd(), 'data', 'column-maps');
+
+// Default code-type promotion rules, applied after code-slot selection.
+// Per-hospital overrides (data/column-maps/<id>.json) can add more.
+export const DEFAULT_PROMOTIONS = [
+  // HCPCS Level II is always alphanumeric (letter + 4 digits); a purely
+  // 5-digit numeric code labeled HCPCS is actually CPT. BSW's file
+  // consistently mislabels CPT codes as HCPCS -- this promotes them.
+  { from: 'HCPCS', to: 'CPT', pattern: '^\\d{5}$' },
+];
+
+/**
+ * Detect CMS v3.0.0 layout from a hospital file's header row.
+ * "tall" = one row per procedure/payer/plan, generic payer_name/plan_name columns.
+ * "wide" = one row per procedure, payer+plan baked into column names
+ * (e.g. standard_charge|Aetna|HMO_Inpatient|negotiated_dollar). Wide-format
+ * files need scripts/parse-csv-wide.js, not this script.
+ */
+export function detectLayout(headers) {
+  return headers.includes('payer_name') ? 'tall' : 'wide';
+}
+
+/**
+ * Load the per-hospital column-map override, if one exists.
+ * Returns { columnMap: {}, promotions: [] } -- both default to empty/default.
+ */
+export function loadOverride(hospitalId) {
+  const overridePath = path.join(COLUMN_MAPS_DIR, `${hospitalId}.json`);
+  if (!existsSync(overridePath)) {
+    return { columnMap: {}, promotions: DEFAULT_PROMOTIONS };
+  }
+  const override = JSON.parse(readFileSync(overridePath, 'utf-8'));
+  return {
+    columnMap: override.columnMap || {},
+    promotions: [...DEFAULT_PROMOTIONS, ...(override.promotions || [])],
+  };
+}
 
 /**
  * Map the real pipe-delimited CMS column names to our internal field names.
  * The CSV headers look like: description, code|1, code|1|type, standard_charge|gross, etc.
  */
-const COLUMN_MAP = {
+export const COLUMN_MAP = {
   'description': 'description',
   'code|1': 'code',
   'code|1|type': 'code_type',
@@ -62,7 +100,7 @@ const COLUMN_MAP = {
 /**
  * Parse a numeric string, returning null for empty/invalid values.
  */
-function parseNum(val) {
+export function parseNum(val) {
   if (!val || val === '' || val === 'N/A' || val === '-') return null;
   const cleaned = String(val).replace(/[$,\s"]/g, '');
   const num = parseFloat(cleaned);
@@ -72,9 +110,49 @@ function parseNum(val) {
 /**
  * Parse a price specifically — round to cents.
  */
-function parsePrice(val) {
+export function parsePrice(val) {
   const num = parseNum(val);
   return num !== null ? Math.round(num * 100) / 100 : null;
+}
+
+/**
+ * Pick the best code across all code slots (code|1 through code|4).
+ * Prefer CPT/HCPCS > MS-DRG/APR-DRG > RC > CDM. BSW puts codes in varying
+ * positions -- CPT might be in code|2 or code|3. Row-level, so this applies
+ * identically whether the source file is tall or wide format.
+ */
+export function selectCode(record, promotions) {
+  const codeSlots = [
+    { code: record.code, type: record.code_type },
+    { code: record.rev_code, type: record.rev_code_type },
+    { code: record.hcpcs_code, type: record.hcpcs_code_type },
+  ].filter(s => s.code && s.type);
+
+  const priority = { CPT: 1, HCPCS: 1, 'MS-DRG': 2, 'APR-DRG': 2, 'TRIS-DRG': 2, RC: 3, CDM: 4 };
+  codeSlots.sort((a, b) => (priority[a.type?.toUpperCase()] || 5) - (priority[b.type?.toUpperCase()] || 5));
+
+  let code = record.code;
+  let codeType = record.code_type;
+  let revCode = record.rev_code;
+
+  if (codeSlots.length > 0) {
+    const best = codeSlots[0];
+    code = best.code;
+    codeType = best.type?.toUpperCase();
+    // Find an RC code for rev_code if it's not the primary
+    const rcSlot = codeSlots.find(s => s.type?.toUpperCase() === 'RC' && s.code !== code);
+    revCode = rcSlot?.code || (record.code_type?.toUpperCase() === 'RC' ? record.code : record.rev_code);
+  }
+
+  // Apply code-type promotion rules (default + any per-hospital override).
+  for (const rule of promotions) {
+    if (codeType === rule.from && code && new RegExp(rule.pattern).test(code)) {
+      codeType = rule.to;
+      break;
+    }
+  }
+
+  return { code, codeType, revCode };
 }
 
 /**
@@ -82,11 +160,20 @@ function parsePrice(val) {
  */
 async function parseFile(filepath) {
   const basename = path.basename(filepath);
+  const hospitalId = basename.replace('.csv', '');
   console.log(`[parse] ${basename}`);
+
+  const { columnMap: overrideMap, promotions } = loadOverride(hospitalId);
+  if (Object.keys(overrideMap).length > 0) {
+    console.log(`  Using column-map override: data/column-maps/${hospitalId}.json`);
+  }
 
   const outName = basename.replace('.csv', '.ndjson');
   const outPath = path.join(PARSED_DIR, outName);
-  const outStream = createWriteStream(outPath);
+  // Opened lazily, only once the layout check confirms this file is tall --
+  // otherwise a wide-format file would truncate an existing good .ndjson
+  // for no reason before being skipped.
+  let outStream = null;
 
   return new Promise((resolve, reject) => {
     let headers = null;
@@ -116,8 +203,20 @@ async function parseFile(filepath) {
 
         if (hasDescription && hasCharge) {
           headers = row.map(c => c.trim());
-          // Build index map: column position -> our field name
-          headerMap = headers.map(h => COLUMN_MAP[h] || null);
+
+          const layout = detectLayout(headers);
+          if (layout === 'wide') {
+            console.log(`  Detected wide-format layout (payer/plan baked into column names, ${headers.length} columns) -- this file needs "npm run parse-data-wide", not this script. Skipping (existing output, if any, left untouched).`);
+            resolve({ dataRows: 0, keptRows: 0, outPath, skipped: 'wide-layout' });
+            csvParser.destroy();
+            return;
+          }
+
+          outStream = createWriteStream(outPath);
+
+          // Build index map: column position -> our field name.
+          // Per-hospital override takes precedence over the default map.
+          headerMap = headers.map(h => overrideMap[h] || COLUMN_MAP[h] || null);
 
           const mappedCount = headerMap.filter(Boolean).length;
           console.log(`  Header found at row ${rowNum}`);
@@ -148,37 +247,7 @@ async function parseFile(filepath) {
       // Skip rows with no description and no code
       if (!record.description && !record.code) return;
 
-      // Pick the best code across all code slots (code|1 through code|4).
-      // Prefer CPT/HCPCS > MS-DRG/APR-DRG > RC > CDM.
-      // BSW puts codes in varying positions — CPT might be in code|2 or code|3.
-      const codeSlots = [
-        { code: record.code, type: record.code_type },
-        { code: record.rev_code, type: record.rev_code_type },
-        { code: record.hcpcs_code, type: record.hcpcs_code_type },
-      ].filter(s => s.code && s.type);
-
-      const priority = { CPT: 1, HCPCS: 1, 'MS-DRG': 2, 'APR-DRG': 2, 'TRIS-DRG': 2, RC: 3, CDM: 4 };
-      codeSlots.sort((a, b) => (priority[a.type?.toUpperCase()] || 5) - (priority[b.type?.toUpperCase()] || 5));
-
-      let code = record.code;
-      let codeType = record.code_type;
-      let revCode = record.rev_code;
-
-      if (codeSlots.length > 0) {
-        const best = codeSlots[0];
-        code = best.code;
-        codeType = best.type?.toUpperCase();
-        // Find an RC code for rev_code if it's not the primary
-        const rcSlot = codeSlots.find(s => s.type?.toUpperCase() === 'RC' && s.code !== code);
-        revCode = rcSlot?.code || (record.code_type?.toUpperCase() === 'RC' ? record.code : record.rev_code);
-      }
-
-      // HCPCS Level II codes are alphanumeric (letter prefix + 4 digits).
-      // A purely 5-digit numeric code labeled HCPCS is actually CPT.
-      // BSW's file consistently mislabels CPT codes as HCPCS in code|3 — this promotes them.
-      if (codeType === 'HCPCS' && /^\d{5}$/.test(code)) {
-        codeType = 'CPT';
-      }
+      const { code, codeType, revCode } = selectCode(record, promotions);
 
       // Parse numeric fields
       const parsed = {
@@ -211,6 +280,11 @@ async function parseFile(filepath) {
     });
 
     csvParser.on('end', () => {
+      if (!outStream) {
+        console.log('  No tall-format header row found -- nothing parsed.');
+        resolve({ dataRows: 0, keptRows: 0, outPath, skipped: 'no-header-found' });
+        return;
+      }
       outStream.end(() => {
         console.log(`  Total: ${dataRows} data rows, ${keptRows} kept`);
         console.log(`  Output: ${outName}`);
@@ -219,7 +293,7 @@ async function parseFile(filepath) {
     });
 
     csvParser.on('error', (err) => {
-      outStream.end();
+      if (outStream) outStream.end();
       console.error(`  Error at row ${rowNum}: ${err.message}`);
       reject(err);
     });
@@ -244,4 +318,10 @@ async function main() {
   console.log('Done. Run "npm run seed-db" next.');
 }
 
-main().catch(console.error);
+// Only run when executed directly (`node scripts/parse-csv.js`), not when
+// this module is imported for its exports (parse-csv-wide.js does exactly
+// that) -- otherwise importing it re-triggers a full pipeline run as a
+// side effect.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch(console.error);
+}

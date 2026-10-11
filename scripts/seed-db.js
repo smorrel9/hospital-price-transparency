@@ -151,14 +151,6 @@ function createIndexes(db) {
   console.log('  Indexes created.');
 }
 
-// Map NDJSON filenames back to hospital IDs
-const HOSPITAL_MAP = {
-  '741109643-1164526786_ascension-seton_standardcharges.ndjson': 'ascension-seton-austin',
-  '741109643-1093810327_ascension-seton_standardcharges.ndjson': 'dell-seton-austin',
-  'bsw-austin.ndjson': 'bsw-austin',
-  "74-2781812_ST.-DAVID'S-MEDICAL-CENTER_standardcharges.ndjson": 'st-davids-austin',
-};
-
 async function main() {
   // Remove old DB
   if (existsSync(DB_PATH)) {
@@ -182,7 +174,7 @@ async function main() {
 
   let grandTotal = 0;
   for (const file of files) {
-    const hospitalId = HOSPITAL_MAP[file] || file.replace('.ndjson', '');
+    const hospitalId = file.replace('.ndjson', '');
     const filepath = path.join(PARSED_DIR, file);
     grandTotal += await seedFile(db, filepath, hospitalId);
   }

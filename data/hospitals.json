@@ -1,0 +1,75 @@
+{
+  "_comment": "Manifest of hospitals in the pipeline. Status flow: discovered -> mapped -> parsed -> qa_pending -> seeded (or flagged). See docs/adding-a-hospital.md.",
+  "hospitals": [
+    {
+      "id": "ascension-seton-austin",
+      "name": "Ascension Seton Medical Center Austin",
+      "ein": "741109643",
+      "city": "Austin",
+      "state": "TX",
+      "source_url": "https://healthcare.ascension.org/-/media/project/ascension/healthcare/price-transparency-files/tx-csv/741109643-1164526786_ascension-seton_standardcharges.csv",
+      "format": "csv",
+      "compressed": true,
+      "status": "seeded",
+      "column_map_file": null,
+      "layout": "tall",
+      "notes": null
+    },
+    {
+      "id": "dell-seton-austin",
+      "name": "Dell Seton Medical Center at UT Austin",
+      "ein": "741109643",
+      "city": "Austin",
+      "state": "TX",
+      "source_url": "https://healthcare.ascension.org/-/media/project/ascension/healthcare/price-transparency-files/tx-csv/741109643-1093810327_ascension-seton_standardcharges.csv",
+      "format": "csv",
+      "compressed": true,
+      "status": "seeded",
+      "column_map_file": null,
+      "layout": "tall",
+      "notes": null
+    },
+    {
+      "id": "bsw-austin",
+      "name": "Baylor Scott & White Medical Center Austin",
+      "ein": "813040663",
+      "city": "Austin",
+      "state": "TX",
+      "source_url": "https://wadcdn.azureedge.net/bswhealth/com/siteassets/pricing-transparency/813040663_baylor-scott--white-medical-center--austin_standardcharges.csv",
+      "format": "csv",
+      "compressed": false,
+      "status": "seeded",
+      "column_map_file": "bsw-austin.json",
+      "layout": "tall",
+      "notes": "Mislabels ~400k CPT-code rows as HCPCS. Handled by the default 5-digit-numeric promotion rule, not a per-hospital override -- column_map_file exists mainly as a record of the issue."
+    },
+    {
+      "id": "st-davids-austin",
+      "name": "St. David's Medical Center Austin",
+      "ein": "742781812",
+      "city": "Austin",
+      "state": "TX",
+      "source_url": "https://stctrprodsnsvc00455826e6.blob.core.windows.net/pt-final-posting-files/74-2781812_ST.-DAVID'S-MEDICAL-CENTER_standardcharges.json?si=pt-json-access-policy&spr=https&sv=2024-11-04&sr=c&sig=o5IofreS%2F7ETlsnhPakPWCwHVVUZRobywQ5wUKGjVuQ%3D",
+      "format": "json",
+      "compressed": false,
+      "status": "seeded",
+      "column_map_file": null,
+      "notes": "HCA-format CMS v3.0.0 JSON, nested structure -- parsed by parse-json.js, not parse-csv.js."
+    },
+    {
+      "id": "md-anderson-houston",
+      "name": "The University of Texas MD Anderson Cancer Center",
+      "ein": "746001118",
+      "city": "Houston",
+      "state": "TX",
+      "source_url": "https://www.mdanderson.org/content/dam/mdanderson/documents/patients-and-family/becoming-our-patient/planning-for-care/74-6001118_MD%20Anderson%20Cancer%20Center_StandardCharges.csv",
+      "format": "csv",
+      "compressed": false,
+      "status": "seeded",
+      "column_map_file": null,
+      "layout": "wide",
+      "notes": "CMS v3.0.0 WIDE-format CSV (1,421 columns, 47 payers), not tall like the Ascension files -- required a new scripts/parse-csv-wide.js, not a column-map override. Verified live 2026-10-11: HTTP 200, text/csv, ~120.6MB, last-modified 2026-10-07. QA passed (data/qa-reports/md-anderson-houston.md): 1,028,611 rows seeded, 96% CPT-code overlap with other hospitals, clean payer names, no negative rates. MD Anderson also separately publishes a ProfessionalCharge.csv (physician/professional charges, not facility standard charges) at the same path -- not added here; this pipeline tracks hospital facility files only, consistent with the other 4 hospitals.",
+      "last_fetched_at": "2026-10-11T19:44:55.215Z"
+    }
+  ]
+}
