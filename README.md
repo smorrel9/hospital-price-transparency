@@ -123,7 +123,7 @@ Each row typically includes a billing code (CPT, HCPCS, DRG, or internal), a des
 Every hospital's MRF has its own quirks (wide vs. tall layout, mislabeled code types, nonstandard columns), so onboarding a new one is a semi-automated, human-approved pipeline rather than a single script. Three Claude Code subagents (`.claude/agents/`) handle the repetitive parts:
 
 - **`hospital-discovery`** — finds and verifies a hospital's CMS MRF URL, writes the manifest entry
-- **`schema-mapper`** — proposes a column-map override when `preflight-check.js` flags a layout or code-mislabeling risk
+- **`schema-mapper`** — proposes a column-map override when `preflight-check.js` flags a code-mislabeling risk (a wide-vs-tall layout flag instead just means running `parse-data-wide` in place of `parse-data`, no override needed)
 - **`data-qa`** — checks row survival, code-type distribution, price sanity, and payer-name hygiene on the parsed output before it's trusted for seeding
 
 Full walkthrough in [`docs/adding-a-hospital.md`](docs/adding-a-hospital.md). For batches of large MRFs (some run 1GB+), the pipeline can also run on a disposable [Fly.io Sprite](docs/sprites-setup.md) instead of a laptop.
