@@ -57,6 +57,20 @@
       "notes": "HCA-format CMS v3.0.0 JSON, nested structure -- parsed by parse-json.js, not parse-csv.js."
     },
     {
+      "id": "houston-methodist",
+      "name": "The Methodist Hospital",
+      "ein": "74110155",
+      "city": "Houston",
+      "state": "TX",
+      "source_url": "https://www.houstonmethodist.org/-/media/files/patient-resources/74110155_the-methodist-hospital_standardcharges.ashx",
+      "format": "json",
+      "compressed": false,
+      "status": "seeded",
+      "column_map_file": null,
+      "notes": "CMS v3.0.0 JSON, same nested standard_charge_information/code_information/standard_charges/payers_information shape as st-davids-austin -- parsed by parse-json.js. Verified live 2026-10-11: HTTP 200, ~68.7MB, last-modified 2026-03-25. Flagship Texas Medical Center campus (CMS name 'The Methodist Hospital'); Houston Methodist also publishes separate files for Baytown, Clear Lake, Cypress, Sugar Land, The Woodlands, West Houston, Willowbrook, and Continuing Care -- not added here, each would need its own manifest entry. EIN taken from filename prefix, not an explicit field in this file's header (unlike the CSV hospitals). First QA pass failed (zero CPT codes -- found parse-json.js was missing the HCPCS->CPT promotion rule parse-csv.js already had; 138,437 codes were mislabeled). Fixed in parse-json.js, re-verified: 99.4% CPT overlap with other hospitals. See data/qa-reports/houston-methodist.md.",
+      "last_fetched_at": "2026-10-11T22:13:31.021Z"
+    },
+    {
       "id": "md-anderson-houston",
       "name": "The University of Texas MD Anderson Cancer Center",
       "ein": "746001118",

@@ -10,10 +10,12 @@
 
 import { createReadStream, createWriteStream, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { parser as jsonParser } from 'stream-json/parser.js';
 import { streamArray } from 'stream-json/streamers/stream-array.js';
 import { pick } from 'stream-json/filters/pick.js';
 import chain from 'stream-chain';
+import { loadOverride } from './parse-csv.js';
 
 const RAW_DIR = path.join(process.cwd(), 'data', 'raw');
 const PARSED_DIR = path.join(process.cwd(), 'data', 'parsed');
@@ -31,7 +33,10 @@ function parsePrice(val) {
  */
 async function parseFile(filepath) {
   const basename = path.basename(filepath);
+  const hospitalId = basename.replace('.json', '');
   console.log(`[parse-json] ${basename}`);
+
+  const { promotions } = loadOverride(hospitalId);
 
   const outName = basename.replace('.json', '.ndjson');
   const outPath = path.join(PARSED_DIR, outName);
@@ -68,6 +73,17 @@ async function parseFile(filepath) {
         } else if (!code) {
           code = c.code;
           codeType = t || 'CDM';
+        }
+      }
+
+      // Apply code-type promotion rules (default 5-digit-numeric HCPCS->CPT,
+      // plus any per-hospital override) -- same rules parse-csv.js applies.
+      // Houston Methodist mislabels ~138k genuine CPT codes as HCPCS here,
+      // the same pattern BSW had in its CSV.
+      for (const rule of promotions) {
+        if (codeType === rule.from && code && new RegExp(rule.pattern).test(code)) {
+          codeType = rule.to;
+          break;
         }
       }
 
@@ -152,4 +168,6 @@ async function main() {
   console.log('Done.');
 }
 
-main().catch(console.error);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch(console.error);
+}
