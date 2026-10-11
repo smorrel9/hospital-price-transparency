@@ -13,7 +13,8 @@
       "status": "seeded",
       "column_map_file": null,
       "layout": "tall",
-      "notes": null
+      "notes": null,
+      "last_fetched_at": "2026-10-11T23:19:43.796Z"
     },
     {
       "id": "dell-seton-austin",
@@ -27,7 +28,8 @@
       "status": "seeded",
       "column_map_file": null,
       "layout": "tall",
-      "notes": null
+      "notes": null,
+      "last_fetched_at": "2026-10-11T23:21:00.316Z"
     },
     {
       "id": "bsw-austin",
@@ -41,7 +43,8 @@
       "status": "seeded",
       "column_map_file": "bsw-austin.json",
       "layout": "tall",
-      "notes": "Mislabels ~400k CPT-code rows as HCPCS. Handled by the default 5-digit-numeric promotion rule, not a per-hospital override -- column_map_file exists mainly as a record of the issue."
+      "notes": "Mislabels ~400k CPT-code rows as HCPCS. Handled by the default 5-digit-numeric promotion rule, not a per-hospital override -- column_map_file exists mainly as a record of the issue.",
+      "last_fetched_at": "2026-10-11T23:22:02.231Z"
     },
     {
       "id": "st-davids-austin",
@@ -68,7 +71,7 @@
       "status": "seeded",
       "column_map_file": null,
       "notes": "CMS v3.0.0 JSON, same nested standard_charge_information/code_information/standard_charges/payers_information shape as st-davids-austin -- parsed by parse-json.js. Verified live 2026-10-11: HTTP 200, ~68.7MB, last-modified 2026-03-25. Flagship Texas Medical Center campus (CMS name 'The Methodist Hospital'); Houston Methodist also publishes separate files for Baytown, Clear Lake, Cypress, Sugar Land, The Woodlands, West Houston, Willowbrook, and Continuing Care -- not added here, each would need its own manifest entry. EIN taken from filename prefix, not an explicit field in this file's header (unlike the CSV hospitals). First QA pass failed (zero CPT codes -- found parse-json.js was missing the HCPCS->CPT promotion rule parse-csv.js already had; 138,437 codes were mislabeled). Fixed in parse-json.js, re-verified: 99.4% CPT overlap with other hospitals. See data/qa-reports/houston-methodist.md.",
-      "last_fetched_at": "2026-10-11T22:13:31.021Z"
+      "last_fetched_at": "2026-10-11T23:22:03.183Z"
     },
     {
       "id": "md-anderson-houston",
@@ -83,7 +86,22 @@
       "column_map_file": null,
       "layout": "wide",
       "notes": "CMS v3.0.0 WIDE-format CSV (1,421 columns, 47 payers), not tall like the Ascension files -- required a new scripts/parse-csv-wide.js, not a column-map override. Verified live 2026-10-11: HTTP 200, text/csv, ~120.6MB, last-modified 2026-10-07. QA passed (data/qa-reports/md-anderson-houston.md): 1,028,611 rows seeded, 96% CPT-code overlap with other hospitals, clean payer names, no negative rates. MD Anderson also separately publishes a ProfessionalCharge.csv (physician/professional charges, not facility standard charges) at the same path -- not added here; this pipeline tracks hospital facility files only, consistent with the other 4 hospitals.",
-      "last_fetched_at": "2026-10-11T19:44:55.215Z"
+      "last_fetched_at": "2026-10-11T23:22:09.325Z"
+    },
+    {
+      "id": "utsw-dallas",
+      "name": "UT Southwestern Medical Center - William P. Clements Jr. University Hospital",
+      "ein": "753175630",
+      "city": "Dallas",
+      "state": "TX",
+      "source_url": "https://sthpiprd.blob.core.windows.net/machine-readable-files/10906/753175630_the-university-of-texas-southwestern-medical-center-at-dallas_standardcharges.csv",
+      "format": "csv",
+      "compressed": false,
+      "status": "discovered",
+      "column_map_file": null,
+      "layout": "tall",
+      "notes": "Discovered via cms-hpt.txt at https://utswmed.org/cms-hpt.txt, which points to source-page https://search.hospitalpriceindex.com/hpi2/machineReadable/UniversityofTexasSouthwesternMedicalCenter/10906 (vendor: Hospital Price Index / sthpiprd.blob.core.windows.net Azure blob storage) and the direct mrf-url used here. CMS filename gives EIN 75-3175630 and names the facility 'The University of Texas Southwestern Medical Center at Dallas'; the vendor portal's own location-name is 'William P Clements Jr University Hospital'. Per the hpi2 landing page, this single file's pricing data covers William P. Clements Jr. University Hospital, Zale Lipshy Pavilion, hospital-based clinics, and ambulatory-based clinics across the health system -- so Zale Lipshy likely does not need a separate manifest entry, but this should be confirmed once the file is parsed (check for a hospital/location column). Verified live 2026-10-11: HTTP 200, Content-Type application/octet-stream (despite .csv extension), Content-Length 1,483,795,643 bytes (~1.48GB), Last-Modified 2026-03-10. Pre-flight check (2026-10-11): tall layout confirmed, 30 columns, clean code-type distribution (97.5%+ match on all 8 code types across 9,051 sampled rows) -- no mislabeling risk, schema-mapper step skipped. One unrecognized column (additional_payer_notes), expected to be dropped by parse-csv.js's default handling. UT System also operates other facilities (e.g. UT Southwestern-affiliated clinics); only the main hospital MRF was added here.",
+      "last_fetched_at": "2026-10-11T23:22:34.011Z"
     }
   ]
 }

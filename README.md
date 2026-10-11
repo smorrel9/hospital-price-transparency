@@ -13,7 +13,7 @@ This tool bridges the gap between regulatory compliance and consumer utility.
 ## What It Does
 
 - Autocomplete search by plain-language procedure name (not just raw CPT/HCPCS codes), backed by SQLite full-text search with BM25 ranking
-- Compares prices for the same procedure across 4 Austin-area hospitals side by side
+- Compares prices for the same procedure across hospitals in Austin, Houston, and Dallas side by side
 - Insurance/payer picker, grouped by category (BCBS, Aetna, United, etc.)
 - Highlights the cash/self-pay price (with its range) alongside negotiated rates
 - Care setting toggle — All / Outpatient / Inpatient
@@ -50,9 +50,19 @@ hospital-price-transparency/
 ├── README.md
 ├── package.json
 ├── fly.toml                        # Fly.io deployment config
+├── docs/
+│   ├── adding-a-hospital.md        # Step-by-step pipeline for onboarding a new hospital
+│   └── sprites-setup.md            # Optional: run the pipeline on a Fly.io Sprite instead of locally
+├── .claude/
+│   └── agents/                     # Subagents used by the hospital-onboarding workflow
+│       ├── hospital-discovery.md   # Finds + verifies a hospital's CMS MRF URL
+│       ├── schema-mapper.md        # Proposes column-map overrides for quirky files
+│       └── data-qa.md              # Row/price/code sanity checks before seeding
 ├── scripts/
 │   ├── fetch-data.js               # Download hospital MRF files
-│   ├── parse-csv.js                # Parse/normalize CSV-format MRFs
+│   ├── preflight-check.js          # Fast layout + code-mislabeling sanity check (pre-parse)
+│   ├── parse-csv.js                # Parse/normalize CSV-format MRFs (tall layout)
+│   ├── parse-csv-wide.js           # Parse/normalize wide-layout CSV MRFs (payer/plan in column names)
 │   ├── parse-json.js               # Parse/normalize JSON-format MRFs
 │   ├── seed-db.js                  # Load parsed data into SQLite
 │   ├── build-friendly-names.js     # CPT/HCPCS code → plain-language name mapping
@@ -83,12 +93,17 @@ hospital-price-transparency/
 
 ## Data Sources
 
-| Hospital | Location |
-|----------|----------|
-| Ascension Seton Medical Center Austin | Austin, TX |
-| Dell Seton Medical Center at UT Austin | Austin, TX |
-| Baylor Scott & White Medical Center Austin | Austin, TX |
-| St. David's Medical Center Austin | Austin, TX |
+| Hospital | Location | Status |
+|----------|----------|--------|
+| Ascension Seton Medical Center Austin | Austin, TX | Seeded |
+| Dell Seton Medical Center at UT Austin | Austin, TX | Seeded |
+| Baylor Scott & White Medical Center Austin | Austin, TX | Seeded |
+| St. David's Medical Center Austin | Austin, TX | Seeded |
+| The Methodist Hospital (Houston Methodist) | Houston, TX | Seeded |
+| The University of Texas MD Anderson Cancer Center | Houston, TX | Seeded |
+| UT Southwestern Medical Center (William P. Clements Jr. University Hospital) | Dallas, TX | In pipeline |
+
+See `data/hospitals.json` for the live manifest (source URLs, format, and pipeline status per hospital) and `docs/adding-a-hospital.md` for how new hospitals get added.
 
 Plus CMS reference data: Physician Fee Schedule (RVU file), OPPS Addendum B (quarterly), and IPPS DRG payment tables — used to compute the Medicare comparison baseline.
 
@@ -102,6 +117,16 @@ The CMS rule (45 C.F.R. § 180.50) requires hospitals to publish:
 - **De-identified min/max**: The lowest and highest negotiated rate across all payers
 
 Each row typically includes a billing code (CPT, HCPCS, DRG, or internal), a description, and rate columns per payer/plan combination.
+
+## Adding a Hospital
+
+Every hospital's MRF has its own quirks (wide vs. tall layout, mislabeled code types, nonstandard columns), so onboarding a new one is a semi-automated, human-approved pipeline rather than a single script. Three Claude Code subagents (`.claude/agents/`) handle the repetitive parts:
+
+- **`hospital-discovery`** — finds and verifies a hospital's CMS MRF URL, writes the manifest entry
+- **`schema-mapper`** — proposes a column-map override when `preflight-check.js` flags a layout or code-mislabeling risk
+- **`data-qa`** — checks row survival, code-type distribution, price sanity, and payer-name hygiene on the parsed output before it's trusted for seeding
+
+Full walkthrough in [`docs/adding-a-hospital.md`](docs/adding-a-hospital.md). For batches of large MRFs (some run 1GB+), the pipeline can also run on a disposable [Fly.io Sprite](docs/sprites-setup.md) instead of a laptop.
 
 ## Tech Stack
 
@@ -119,8 +144,9 @@ git clone https://github.com/smorrel9/hospital-price-transparency.git
 cd hospital-price-transparency
 npm install
 
-# Full data pipeline: hospital MRFs + CMS Medicare reference data (~30 min,
-# downloads ~1GB and parses 30M+ rows)
+# Full data pipeline: hospital MRFs + CMS Medicare reference data (~45 min+,
+# downloads several GB of hospital MRFs -- grows as hospitals are added, see
+# data/hospitals.json -- and parses 30M+ rows)
 npm run setup
 
 npm run dev
@@ -128,10 +154,9 @@ npm run dev
 
 ## Roadmap
 
-Shipped: 4-hospital comparison, friendly-name search, insurance picker, care setting toggle, full Medicare baseline (PFS + OPPS + DRG) with % vs Medicare badges, live deployment.
+Shipped: multi-hospital comparison across Austin/Houston/Dallas, friendly-name search, insurance picker, care setting toggle, full Medicare baseline (PFS + OPPS + DRG) with % vs Medicare badges, live deployment, a tall + wide CSV/JSON parser pipeline with pre-flight checks and per-hospital column-map overrides, and a subagent-driven hospital onboarding workflow (see [Adding a Hospital](#adding-a-hospital)).
 
 Open ideas:
-- Generalized CSV/JSON parser hardening as more hospitals are added
 - Automated annual data refresh pipeline
 - Cost estimator (procedure price + facility fee + common add-ons)
 - A companion site-of-service tool (office vs. ASC vs. hospital outpatient) is in progress as a separate project: [site-of-service-comparison](https://github.com/smorrel9/site-of-service-comparison)
