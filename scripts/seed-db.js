@@ -61,6 +61,28 @@ function createSchema(db) {
       INSERT INTO procedures_fts(rowid, description, code, rev_code, payer_name)
       VALUES (new.id, new.description, new.code, new.rev_code, new.payer_name);
     END;
+
+    CREATE TRIGGER procedures_ad AFTER DELETE ON procedures BEGIN
+      INSERT INTO procedures_fts(procedures_fts, rowid, description, code, rev_code, payer_name)
+      VALUES ('delete', old.id, old.description, old.code, old.rev_code, old.payer_name);
+    END;
+  `);
+}
+
+/**
+ * The AFTER DELETE trigger above didn't exist before per-hospital upsert was
+ * added -- any DB built by an older version of this script (including the
+ * current production DB) is missing it. Without it, deleting a hospital's
+ * rows to re-seed them would leave orphaned entries in procedures_fts
+ * pointing at ids that no longer exist in procedures. Idempotent, so it's
+ * safe to call every time.
+ */
+function ensureDeleteTrigger(db) {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS procedures_ad AFTER DELETE ON procedures BEGIN
+      INSERT INTO procedures_fts(procedures_fts, rowid, description, code, rev_code, payer_name)
+      VALUES ('delete', old.id, old.description, old.code, old.rev_code, old.payer_name);
+    END;
   `);
 }
 
@@ -138,6 +160,36 @@ async function seedFile(db, filepath, hospitalId) {
   console.log(`  Processed ${total.toLocaleString()} rows, skipped ${skipped.toLocaleString()} (non-CPT/HCPCS/DRG), deduped ${deduped.toLocaleString()}`);
 }
 
+/**
+ * Replace one hospital's rows without touching anyone else's or rebuilding
+ * the whole database. The old full-rebuild path re-parsed and re-inserted
+ * every hospital's file on every run -- fine at a handful of hospitals,
+ * a genuine traffic jam once several Sprites are each onboarding a
+ * different hospital on their own schedule (see docs/decision-log.md).
+ */
+async function upsertHospital(db, hospitalId, filepath) {
+  ensureDeleteTrigger(db);
+
+  const before = db.prepare(
+    'SELECT COUNT(*) as n FROM procedures WHERE hospital_id = ?'
+  ).get(hospitalId).n;
+
+  db.prepare('DELETE FROM procedures WHERE hospital_id = ?').run(hospitalId);
+  console.log(`[upsert] Removed ${before.toLocaleString()} existing rows for ${hospitalId}`);
+
+  await seedFile(db, filepath, hospitalId);
+  createIndexes(db);
+  buildSummaryStats(db);
+
+  const after = db.prepare(
+    'SELECT COUNT(*) as n FROM procedures WHERE hospital_id = ?'
+  ).get(hospitalId).n;
+  const total = db.prepare('SELECT COUNT(*) as n FROM procedures').get().n;
+
+  console.log(`\n${hospitalId}: ${after.toLocaleString()} rows (was ${before.toLocaleString()})`);
+  console.log(`Database total: ${total.toLocaleString()} rows`);
+}
+
 function createIndexes(db) {
   console.log('[seed] Creating indexes...');
   db.exec(`
@@ -152,6 +204,35 @@ function createIndexes(db) {
 }
 
 async function main() {
+  const targetHospital = process.argv[2];
+
+  // Single-hospital upsert mode: `node scripts/seed-db.js <hospital_id>`.
+  // Requires an existing DB -- this replaces one hospital's rows in place,
+  // it doesn't build a database from scratch.
+  if (targetHospital) {
+    const filepath = path.join(PARSED_DIR, `${targetHospital}.ndjson`);
+    if (!existsSync(filepath)) {
+      console.error(`No parsed file found for "${targetHospital}" at ${filepath}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!existsSync(DB_PATH)) {
+      console.error(`No existing database at ${DB_PATH} -- run a full seed first (npm run seed-db with no args).`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('cache_size = -64000');
+
+    await upsertHospital(db, targetHospital, filepath);
+
+    db.close();
+    return;
+  }
+
   // Remove old DB
   if (existsSync(DB_PATH)) {
     unlinkSync(DB_PATH);
