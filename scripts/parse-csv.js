@@ -126,10 +126,11 @@ export function selectCode(record, promotions) {
     { code: record.code, type: record.code_type },
     { code: record.rev_code, type: record.rev_code_type },
     { code: record.hcpcs_code, type: record.hcpcs_code_type },
+    { code: record.ndc_code, type: record.ndc_code_type },
   ].filter(s => s.code && s.type);
 
-  const priority = { CPT: 1, HCPCS: 1, 'MS-DRG': 2, 'APR-DRG': 2, 'TRIS-DRG': 2, RC: 3, CDM: 4 };
-  codeSlots.sort((a, b) => (priority[a.type?.toUpperCase()] || 5) - (priority[b.type?.toUpperCase()] || 5));
+  const priority = { CPT: 1, HCPCS: 1, 'MS-DRG': 2, 'APR-DRG': 2, 'TRIS-DRG': 2, NDC: 3, RC: 4, CDM: 5 };
+  codeSlots.sort((a, b) => (priority[a.type?.toUpperCase()] || 6) - (priority[b.type?.toUpperCase()] || 6));
 
   let code = record.code;
   let codeType = record.code_type;
