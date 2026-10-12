@@ -298,42 +298,20 @@ app.get('/api/procedure/:code', (req, res) => {
 });
 
 /**
- * Build hospital summary stats at first request (cached — the full-table
- * GROUP BY with multiple COUNT(DISTINCT ...) runs synchronously on better-sqlite3
- * and blocks the whole single-threaded event loop while it runs. At 7M+ rows
- * that took 12s+ even with a warm local cache, which froze every other
- * request (including the homepage) behind it. Same pattern as
- * buildPayerCategories() below.
- */
-let _hospitalStatsCache = null;
-let _hospitalStatsBuilding = false;
-function buildHospitalStats() {
-  if (_hospitalStatsCache) return _hospitalStatsCache;
-
-  _hospitalStatsBuilding = true;
-  console.log('Building hospital stats cache...');
-  _hospitalStatsCache = db.prepare(`
-    SELECT DISTINCT hospital_id,
-      COUNT(*) as record_count,
-      COUNT(DISTINCT code) as unique_codes,
-      COUNT(DISTINCT payer_name) as payer_count
-    FROM procedures
-    GROUP BY hospital_id
-  `).all();
-  _hospitalStatsBuilding = false;
-  console.log(`  ${_hospitalStatsCache.length} hospitals cached`);
-  return _hospitalStatsCache;
-}
-
-/**
  * GET /api/hospitals
  * List all hospitals in the database.
+ *
+ * Reads from the hospital_stats table built once by
+ * scripts/build-summary-stats.js (run as part of seed-db.js). The
+ * equivalent live GROUP BY with multiple COUNT(DISTINCT ...) runs
+ * synchronously on better-sqlite3 and blocks the whole single-threaded
+ * event loop while it runs -- at 7M+ rows that's 12-60+ seconds depending
+ * on disk cache state, which froze every other request (including the
+ * homepage) behind it on every cold start.
  */
 app.get('/api/hospitals', (req, res) => {
-  if (_hospitalStatsBuilding) {
-    return res.json({ hospitals: [], loading: true });
-  }
-  res.json({ hospitals: buildHospitalStats() });
+  const hospitals = db.prepare('SELECT * FROM hospital_stats').all();
+  res.json({ hospitals });
 });
 
 /**
@@ -358,43 +336,13 @@ app.get('/api/payers', (req, res) => {
 });
 
 /**
- * Build database summary stats at first request (cached — same blocking
- * full-table-scan problem as buildHospitalStats() above).
- */
-let _dbStatsCache = null;
-let _dbStatsBuilding = false;
-function buildDbStats() {
-  if (_dbStatsCache) return _dbStatsCache;
-
-  _dbStatsBuilding = true;
-  console.log('Building db stats cache...');
-  const total = db.prepare('SELECT COUNT(*) as count FROM procedures').get();
-  const payers = db.prepare('SELECT COUNT(DISTINCT payer_name) as count FROM procedures WHERE payer_name IS NOT NULL').get();
-  const codes = db.prepare('SELECT COUNT(DISTINCT code) as count FROM procedures WHERE code IS NOT NULL').get();
-  const settings = db.prepare("SELECT setting, COUNT(*) as count FROM procedures GROUP BY setting").all();
-  const settingCounts = {};
-  for (const s of settings) settingCounts[s.setting || 'UNKNOWN'] = s.count;
-
-  _dbStatsCache = {
-    total_records: total.count,
-    payers: payers.count,
-    unique_codes: codes.count,
-    settings: settingCounts,
-  };
-  _dbStatsBuilding = false;
-  console.log('  db stats cached');
-  return _dbStatsCache;
-}
-
-/**
  * GET /api/stats
- * Database summary statistics.
+ * Database summary statistics. Reads the precomputed db_stats row built by
+ * scripts/build-summary-stats.js -- see the note on /api/hospitals above.
  */
 app.get('/api/stats', (req, res) => {
-  if (_dbStatsBuilding) {
-    return res.json({ loading: true });
-  }
-  res.json(buildDbStats());
+  const row = db.prepare('SELECT stats_json FROM db_stats WHERE id = 1').get();
+  res.json(JSON.parse(row.stats_json));
 });
 
 /**
@@ -470,73 +418,18 @@ app.get('/api/autocomplete', (req, res) => {
 });
 
 /**
- * Build payer categories at startup (cached — the 36M row DISTINCT is slow).
- */
-let _payerCategoriesCache = null;
-let _payerCacheBuilding = false;
-function buildPayerCategories() {
-  if (_payerCategoriesCache) return _payerCategoriesCache;
-
-  _payerCacheBuilding = true;
-  console.log('Building payer categories cache...');
-  const rows = db.prepare(`
-    SELECT DISTINCT payer_name, hospital_id
-    FROM procedures
-    WHERE payer_name IS NOT NULL
-  `).all();
-
-  const categoryPatterns = [
-    { category: 'BCBS',      test: n => /BCBS|Blue\s*Cross|BLUE/i.test(n) },
-    { category: 'Aetna',     test: n => /AETNA|Aetna/i.test(n) },
-    { category: 'United',    test: n => /UNITED|UHC|Uhc/i.test(n) },
-    { category: 'Cigna',     test: n => /CIGNA|Cigna/i.test(n) },
-    { category: 'Humana',    test: n => /HUMANA|Humana/i.test(n) },
-    { category: 'Medicare',  test: n => /MEDICARE|Medicare/i.test(n) },
-    { category: 'Medicaid',  test: n => /MEDICAID|Medicaid|STAR|CHIP/i.test(n) },
-  ];
-
-  const groups = {};
-  for (const { payer_name, hospital_id } of rows) {
-    let matched = false;
-    for (const { category, test } of categoryPatterns) {
-      if (test(payer_name)) {
-        if (!groups[category]) groups[category] = {};
-        if (!groups[category][payer_name]) groups[category][payer_name] = new Set();
-        groups[category][payer_name].add(hospital_id);
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) {
-      if (!groups['Other']) groups['Other'] = {};
-      if (!groups['Other'][payer_name]) groups['Other'][payer_name] = new Set();
-      groups['Other'][payer_name].add(hospital_id);
-    }
-  }
-
-  _payerCategoriesCache = Object.entries(groups).map(([category, payers]) => ({
-    category,
-    payers: Object.entries(payers).map(([payer_name, hospitalSet]) => ({
-      payer_name,
-      hospital_ids: Array.from(hospitalSet),
-    })),
-  }));
-
-  _payerCacheBuilding = false;
-  console.log(`  ${_payerCategoriesCache.length} categories, ${rows.length} payer/hospital combos`);
-  return _payerCategoriesCache;
-}
-
-/**
  * GET /api/payer-categories
- * Return payer names grouped into broad insurance categories.
+ * Return payer names grouped into broad insurance categories. Reads the
+ * precomputed payer_category_stats row built by
+ * scripts/build-summary-stats.js -- the live "36M row DISTINCT" this used
+ * to run on every cold start blocked the whole event loop for 15s+, and
+ * the frontend's InsurancePicker has no retry, so a request that landed
+ * mid-build got an empty picker permanently.
  */
 app.get('/api/payer-categories', (req, res) => {
   try {
-    if (_payerCacheBuilding) {
-      return res.json({ categories: [], loading: true });
-    }
-    res.json({ categories: buildPayerCategories() });
+    const row = db.prepare('SELECT categories_json FROM payer_category_stats WHERE id = 1').get();
+    return res.json({ categories: JSON.parse(row.categories_json) });
   } catch (err) {
     console.error('Payer categories error:', err.message);
     res.status(500).json({ error: 'Failed to load payer categories', detail: err.message });

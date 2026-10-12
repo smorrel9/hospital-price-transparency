@@ -12,6 +12,7 @@ import { createReadStream, readdirSync, unlinkSync, existsSync } from 'fs';
 import { createInterface } from 'readline';
 import Database from 'better-sqlite3';
 import path from 'path';
+import { buildSummaryStats } from './build-summary-stats.js';
 
 const PARSED_DIR = path.join(process.cwd(), 'data', 'parsed');
 const DB_PATH = path.join(process.cwd(), 'data', 'prices.db');
@@ -178,6 +179,7 @@ async function main() {
   }
 
   createIndexes(db);
+  buildSummaryStats(db);
 
   // Quick stats
   const count = db.prepare('SELECT COUNT(*) as n FROM procedures').get();
