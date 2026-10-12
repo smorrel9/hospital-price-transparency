@@ -80,10 +80,15 @@ async function seedFile(db, filepath, hospitalId) {
     )
   `);
 
+  // Returns the number of rows actually inserted (vs. ignored as duplicates),
+  // via better-sqlite3's own per-statement .changes -- not a SELECT COUNT(*),
+  // which would rescan the whole (and ever-growing) table on every batch.
   const insertBatch = db.transaction((rows) => {
+    let inserted = 0;
     for (const row of rows) {
-      insert.run(row);
+      inserted += insert.run(row).changes;
     }
+    return inserted;
   });
 
   const rl = createInterface({
@@ -111,10 +116,8 @@ async function seedFile(db, filepath, hospitalId) {
     batch.push(record);
 
     if (batch.length >= BATCH_SIZE) {
-      const before = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
-      insertBatch(batch);
-      const after = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
-      deduped += batch.length - (after - before);
+      const inserted = insertBatch(batch);
+      deduped += batch.length - inserted;
       total += batch.length;
       batch = [];
 
@@ -126,16 +129,12 @@ async function seedFile(db, filepath, hospitalId) {
 
   // Flush remaining
   if (batch.length > 0) {
-    const before = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
-    insertBatch(batch);
-    const after = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
-    deduped += batch.length - (after - before);
+    const inserted = insertBatch(batch);
+    deduped += batch.length - inserted;
     total += batch.length;
   }
 
   console.log(`  Processed ${total.toLocaleString()} rows, skipped ${skipped.toLocaleString()} (non-CPT/HCPCS/DRG), deduped ${deduped.toLocaleString()}`);
-  const finalCount = db.prepare('SELECT COUNT(*) as c FROM procedures').get().c;
-  return finalCount;
 }
 
 function createIndexes(db) {
@@ -172,11 +171,10 @@ async function main() {
     return;
   }
 
-  let grandTotal = 0;
   for (const file of files) {
     const hospitalId = file.replace('.ndjson', '');
     const filepath = path.join(PARSED_DIR, file);
-    grandTotal += await seedFile(db, filepath, hospitalId);
+    await seedFile(db, filepath, hospitalId);
   }
 
   createIndexes(db);
