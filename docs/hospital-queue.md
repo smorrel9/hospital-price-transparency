@@ -2,17 +2,7 @@
 
 Backlog of candidate hospitals for the pilot expansion, so there's always a next pick ready without re-researching from scratch. Not verified manifest entries -- that's what `hospital-discovery` does when a hospital actually gets picked up. Bed counts/rankings via web search 2026-10-12, worth a sanity-check if this list is used much later (hospital systems merge/rename).
 
-## Done / in progress
-
-| Hospital | City | Status |
-|---|---|---|
-| Ascension Seton Medical Center Austin | Austin | Seeded |
-| Dell Seton Medical Center at UT Austin | Austin | Seeded |
-| Baylor Scott & White Medical Center Austin | Austin | Seeded |
-| St. David's Medical Center Austin | Austin | Seeded (source URL expired, see `known-issues.md`) |
-| The Methodist Hospital (Houston Methodist flagship) | Houston | Seeded |
-| MD Anderson Cancer Center | Houston | Seeded |
-| UT Southwestern (William P. Clements Jr. University Hospital) | Dallas | In pipeline |
+**Status tracking lives in GitHub Projects, not here:** [Hospital Onboarding Queue](https://github.com/users/smorrel9/projects/1). This file stays the research/rationale reference (naming traps, diversity notes, sources) -- check off a hospital in the Project when it ships, don't maintain a parallel status table here.
 
 ## Houston queue
 

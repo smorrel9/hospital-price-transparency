@@ -40,18 +40,19 @@ Run this from a Claude Code session with access to this repo -- either locally, 
 
 6. **QA.** Ask Claude Code to run the `data-qa` subagent against the new NDJSON. It checks row survival rate, code-type distribution, price sanity, null rates, cross-hospital code overlap, and payer-name hygiene, then writes `data/qa-reports/<hospital-id>.md` with a pass/flag verdict and a recommendation. **Read the recommendation before seeding** -- this is the full-data check behind pre-flight's quick sample, and it's still worth running even after a clean pre-flight.
 
-7. **Seed.**
+7. **Seed.** If `data/prices.db` already exists, upsert just the new hospital rather than rebuilding everything:
    ```bash
-   npm run seed-db
+   node scripts/seed-db.js <hospital_id>
    ```
-   Rebuilds `data/prices.db` from everything in `data/parsed/`. (Full rebuild, not incremental -- fine at pilot scale; revisit if this gets slow at 20+ hospitals.)
+   This deletes and re-seeds only that hospital's rows -- other hospitals, indexes, and the precomputed summary-stats tables are untouched/refreshed automatically. Built 2026-10-12 after the full-rebuild path became the bottleneck at 7 hospitals; see `docs/decision-log.md`.
 
-8. **`git pull`, then update the manifest status** to `seeded` for the hospital in `data/hospitals.json` (see "Working in parallel" above), and rebuild friendly names / FTS if needed:
-   ```bash
-   npm run build-names
-   ```
+   Only run a full rebuild (`npm run seed-db`, no args) if there's no existing database yet, or if you deliberately want to rebuild from scratch.
+
+8. **`git pull`, then update the manifest status** to `seeded` for the hospital in `data/hospitals.json` (see "Working in parallel" above). `build-names` only needs to run once per hospital if it introduced genuinely new codes not covered by the curated/auto-expand logic -- check `data/qa-reports/<hospital-id>.md` for any flagged friendly-name gaps before deciding whether to re-run it.
 
 9. **Deploy.** Same as always -- `fly deploy` (or whatever your current Fly.io deploy step is) once `data/prices.db` looks right locally.
+
+10. **Check it off.** Mark the hospital Done (and set its City) on the [Hospital Onboarding Queue](https://github.com/users/smorrel9/projects/1) project board.
 
 ## Manifest status values
 
