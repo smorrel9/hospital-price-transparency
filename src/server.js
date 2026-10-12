@@ -298,11 +298,21 @@ app.get('/api/procedure/:code', (req, res) => {
 });
 
 /**
- * GET /api/hospitals
- * List all hospitals in the database.
+ * Build hospital summary stats at first request (cached — the full-table
+ * GROUP BY with multiple COUNT(DISTINCT ...) runs synchronously on better-sqlite3
+ * and blocks the whole single-threaded event loop while it runs. At 7M+ rows
+ * that took 12s+ even with a warm local cache, which froze every other
+ * request (including the homepage) behind it. Same pattern as
+ * buildPayerCategories() below.
  */
-app.get('/api/hospitals', (req, res) => {
-  const hospitals = db.prepare(`
+let _hospitalStatsCache = null;
+let _hospitalStatsBuilding = false;
+function buildHospitalStats() {
+  if (_hospitalStatsCache) return _hospitalStatsCache;
+
+  _hospitalStatsBuilding = true;
+  console.log('Building hospital stats cache...');
+  _hospitalStatsCache = db.prepare(`
     SELECT DISTINCT hospital_id,
       COUNT(*) as record_count,
       COUNT(DISTINCT code) as unique_codes,
@@ -310,8 +320,20 @@ app.get('/api/hospitals', (req, res) => {
     FROM procedures
     GROUP BY hospital_id
   `).all();
+  _hospitalStatsBuilding = false;
+  console.log(`  ${_hospitalStatsCache.length} hospitals cached`);
+  return _hospitalStatsCache;
+}
 
-  res.json({ hospitals });
+/**
+ * GET /api/hospitals
+ * List all hospitals in the database.
+ */
+app.get('/api/hospitals', (req, res) => {
+  if (_hospitalStatsBuilding) {
+    return res.json({ hospitals: [], loading: true });
+  }
+  res.json({ hospitals: buildHospitalStats() });
 });
 
 /**
@@ -336,10 +358,16 @@ app.get('/api/payers', (req, res) => {
 });
 
 /**
- * GET /api/stats
- * Database summary statistics.
+ * Build database summary stats at first request (cached — same blocking
+ * full-table-scan problem as buildHospitalStats() above).
  */
-app.get('/api/stats', (req, res) => {
+let _dbStatsCache = null;
+let _dbStatsBuilding = false;
+function buildDbStats() {
+  if (_dbStatsCache) return _dbStatsCache;
+
+  _dbStatsBuilding = true;
+  console.log('Building db stats cache...');
   const total = db.prepare('SELECT COUNT(*) as count FROM procedures').get();
   const payers = db.prepare('SELECT COUNT(DISTINCT payer_name) as count FROM procedures WHERE payer_name IS NOT NULL').get();
   const codes = db.prepare('SELECT COUNT(DISTINCT code) as count FROM procedures WHERE code IS NOT NULL').get();
@@ -347,12 +375,26 @@ app.get('/api/stats', (req, res) => {
   const settingCounts = {};
   for (const s of settings) settingCounts[s.setting || 'UNKNOWN'] = s.count;
 
-  res.json({
+  _dbStatsCache = {
     total_records: total.count,
     payers: payers.count,
     unique_codes: codes.count,
     settings: settingCounts,
-  });
+  };
+  _dbStatsBuilding = false;
+  console.log('  db stats cached');
+  return _dbStatsCache;
+}
+
+/**
+ * GET /api/stats
+ * Database summary statistics.
+ */
+app.get('/api/stats', (req, res) => {
+  if (_dbStatsBuilding) {
+    return res.json({ loading: true });
+  }
+  res.json(buildDbStats());
 });
 
 /**
