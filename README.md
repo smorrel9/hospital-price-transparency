@@ -160,6 +160,7 @@ Shipped: multi-hospital comparison across Austin/Houston/Dallas, friendly-name s
 Open ideas:
 - Automated annual data refresh pipeline
 - Cost estimator (procedure price + facility fee + common add-ons)
+- City-first filtering: pick a metro before searching, so the comparison table doesn't mix Austin/Houston/Dallas results by default once there are enough cities that "all hospitals" stops being a useful default
 - A companion site-of-service tool (office vs. ASC vs. hospital outpatient) is in progress as a separate project: [site-of-service-comparison](https://github.com/smorrel9/site-of-service-comparison)
 
 ## Why This Matters
