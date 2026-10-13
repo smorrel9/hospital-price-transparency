@@ -6,8 +6,9 @@
  *   GET /api/search?q=knee+mri
  *   GET /api/procedure/:code
  *   GET /api/hospitals
- *   GET /api/payers
  *   GET /api/stats
+ *   GET /api/autocomplete?q=knee
+ *   GET /api/payer-categories
  */
 
 import express from 'express';
@@ -314,26 +315,14 @@ app.get('/api/hospitals', (req, res) => {
   res.json({ hospitals });
 });
 
-/**
- * GET /api/payers
- * List all payers/plans, optionally filtered by setting.
- */
-app.get('/api/payers', (req, res) => {
-  const { setting } = req.query;
-
-  let query = `
-    SELECT DISTINCT payer_name, plan_name, COUNT(*) as rate_count
-    FROM procedures
-    WHERE payer_name IS NOT NULL
-    ${setting ? 'AND setting = ?' : ''}
-    GROUP BY payer_name, plan_name
-    ORDER BY payer_name, plan_name
-  `;
-  const params = setting ? [setting.toUpperCase()] : [];
-
-  const payers = db.prepare(query).all(...params);
-  res.json({ payers });
-});
+// GET /api/payers was removed 2026-10-13. It ran a live full-table GROUP BY
+// over payer_name/plan_name -- 45s for 675 rows locally, worse on the deployed
+// volume -- and better-sqlite3 blocks the event loop, so a single request to it
+// froze the entire site for every visitor. Nothing in the app called it, and
+// /api/payer-categories already serves the payer list from a precomputed blob.
+// Found by scripts/smoke.js on its first run. Same class as the 2026-10-12
+// outage; see docs/known-issues.md. If plan-level data is ever needed, it comes
+// back as a precomputed table in build-summary-stats.js, not a live aggregate.
 
 /**
  * GET /api/stats
