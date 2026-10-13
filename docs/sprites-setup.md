@@ -48,15 +48,17 @@ Verify before trusting anything else:
 sprite exec -- bash -c "cd hospital-price-transparency && node -e \"require('better-sqlite3')(':memory:')\""
 ```
 
-### Copy the Tigris credentials over
+### Copy the two gitignored files over
 
-A worker publishes its finished artifact to object storage, which needs the keys in `.env`. That file is gitignored, so a fresh clone won't have it:
+A fresh clone is missing two files that a worker needs, both gitignored by design. Neither failure is loud -- you get an unapproved MCP server and a stalled sign-in rather than an error:
 
 ```bash
 sprite file push .env <sprite-name>:hospital-price-transparency/.env
+sprite file push .claude/settings.local.json <sprite-name>:hospital-price-transparency/.claude/settings.local.json
 ```
 
-`flyctl storage dashboard` shows the values again if you lose them. Without this, `publish-artifact` fails with a message naming exactly which variables are missing rather than an opaque SDK credentials error.
+- **`.env`** holds the Tigris keys that `publish-artifact` needs. `flyctl storage dashboard` shows the values again if you lose them. Without it, `publish-artifact` fails naming exactly which variables are missing rather than throwing an opaque SDK credentials error.
+- **`.claude/settings.local.json`** holds `enabledMcpjsonServers: ["senselab"]`, which is the per-project approval for the MCP server in `.mcp.json`. Without it the server is simply never approved, so the SenseLab OAuth flow never even starts -- on 2026-10-13 this looked exactly like a failed login (`accessToken` empty, `mcpNeedsAuthNoticed` naming senselab) when the real cause was a missing approval. Push a minimal version with just the `enabledMcpjsonServers`/`enableAllProjectMcpServers` keys rather than your laptop's copy, which also carries local permission rules a worker has no use for.
 
 Then confirm the whole worker is actually in a fit state before starting a hospital:
 ```bash
@@ -87,7 +89,7 @@ Not yet confirmed: whether the sign-in survives the Sprite pausing and waking. I
 
 Detach without killing the session: `Ctrl+\`. Reattach any time with `sprite console` again -- state persists.
 
-## Checkpoints (your undo button)
+## Checkpoints (your undo button, and the reset between hospitals)
 
 Before a risky step (e.g. first parse of a new hospital's file), it's worth a checkpoint:
 
@@ -96,6 +98,27 @@ sprite checkpoint create --comment "before parsing methodist-dallas"
 sprite checkpoint list
 sprite restore <version-id>   # if the parse goes badly
 ```
+
+### Resetting a worker between hospitals
+
+Take the baseline checkpoint **after** the SenseLab sign-in, not before. A clean-but-unauthenticated checkpoint is the wrong restore target: every reset would cost an interactive browser round trip, which defeats the point. Note this means the checkpoint contains a live OAuth token, so keep it to this Sprite -- don't share or export it.
+
+```bash
+# once, after setup + sign-in
+sprite checkpoint create -s <sprite> --comment "clean + senselab authed"
+```
+
+Then the reset loop, verified end-to-end on `hpt-worker-2` 2026-10-13:
+
+```bash
+sprite restore <id> -s <sprite>
+sprite exec -s <sprite> -- sh -c "cd hospital-price-transparency && git pull && npm ci"
+sprite exec -s <sprite> -- sh -c "cd hospital-price-transparency && npm run worker-ready"
+```
+
+The `git pull` is not optional: the checkpoint ages relative to `main`, so a restored worker is behind by however many commits landed since. `worker-ready` catches exactly that and says to pull -- which it did on the first real test, correctly.
+
+**Restore does roll back everything that matters.** Verified by deliberately dirtying the worker (130MB of junk across `data/raw` and `data/parsed`, a marker file in `$HOME`, and an edit to a tracked file) and restoring: the junk, the marker and the git modification were all gone, and `~/.claude/.credentials.json` came back byte-identical, with the SenseLab access and refresh tokens intact.
 
 ## Getting data back out
 
