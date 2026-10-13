@@ -39,3 +39,11 @@ This resolves the re-derive-vs-transfer question from below: neither. `sprite fi
 **Original open question below, kept for context:**
 
 Per-hospital upsert is built (`docs/decision-log.md`'s own earlier note, now done). The producer/consumer split (parallel-safe stages vs. centralized seeding) is agreed and scaffolded. Re-derive vs. transfer is resolved above: transfer, via `sprite file pull`/`push`, no new infra.
+
+### Disambiguating flagship vs. sibling-campus files under a shared EIN/vendor grouping
+
+**Context:** 2026-10-12, while `hpt-worker-1` refreshed Ascension Seton Austin, discovery hit a combined vendor file (`741109643-1093810327_ascension-seton_standardcharges.csv`, a different filename/EIN pattern than the existing single-campus `ascension-seton-austin.csv`) that bundled in sibling campuses -- Woodlands, West, North Austin -- named in a way that didn't obviously confirm they were even the same metro market as Austin. Worker-1 excluded them as flagship-only, consistent with the Houston Methodist/Memorial Hermann precedent, and confirmed it's working the actual flagship. Not actually wrong this time, but the *scenario* is a real gap: a large system filing one combined file across several facilities (possibly across markets) looks, from the filename alone, a lot like a single-campus file -- nothing in `data/hospitals.json`'s schema today records "this source file covers N facilities, here's how we identified which one is ours."
+
+**Question:** worth a consistent way to record, at manifest time, which facility within a multi-facility source file an entry actually represents -- a `facility_identifier` note, a required one-line justification in `notes` when a source file is shared across campuses, or something else. Not urgent (worker-1 handled this one correctly), but the pattern will recur as more large systems (HCA, Ascension, CommonSpirit) get added, and "looked at the filename and assumed" is exactly the failure mode `schema-mapper`/`hospital-discovery` just got instructed to stop doing.
+
+**Status:** Open, pending -- parked for later, not blocking anything right now.
