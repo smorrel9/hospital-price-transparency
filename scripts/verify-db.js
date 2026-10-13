@@ -146,7 +146,9 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  console.log('\nOK: database and manifest agree.');
+  // Say which checks actually ran. Claiming the manifest agrees when it was
+  // never read would be the same overstatement this script exists to catch.
+  console.log(claimed ? '\nOK: database and manifest agree.' : '\nOK: database checks passed (manifest not compared).');
 }
 
 main();
