@@ -18,6 +18,8 @@
     "seed-db:rebuild": "node scripts/seed-db.js --rebuild-all",
     "verify-db": "node scripts/verify-db.js",
     "smoke": "node scripts/smoke.js",
+    "publish-db": "node scripts/publish-db.js",
+    "rollback-db": "node scripts/rollback-db.js",
     "build-names": "node scripts/build-friendly-names.js",
     "fetch-medicare": "node scripts/fetch-medicare.js",
     "fetch-opps": "node scripts/fetch-opps.js",
