@@ -21,6 +21,8 @@
     "publish-db": "node scripts/publish-db.js",
     "rollback-db": "node scripts/rollback-db.js",
     "worker-ready": "node scripts/worker-ready.js",
+    "publish-artifact": "node scripts/publish-artifact.js",
+    "fetch-artifact": "node scripts/fetch-artifact.js",
     "build-names": "node scripts/build-friendly-names.js",
     "fetch-medicare": "node scripts/fetch-medicare.js",
     "fetch-opps": "node scripts/fetch-opps.js",
@@ -37,6 +39,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1150.0",
+    "@aws-sdk/lib-storage": "^3.1150.0",
     "better-sqlite3": "^11.0.0",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.0",

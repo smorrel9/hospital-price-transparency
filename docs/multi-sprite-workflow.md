@@ -13,38 +13,39 @@ Each Sprite would have its own local database. Per-hospital upsert (`scripts/see
 Same as `adding-a-hospital.md` steps 1-6, with two differences:
 
 1. **Stop at `qa_pending`.** Do not run `seed-db.js`. Do not update the manifest status past `qa_pending`. Seeding is the reconciler's job, done once, against the one canonical database -- not something every worker does independently.
-2. **Push a branch, not `main`.** Once QA passes:
+2. **Publish the handoff to object storage.** Once QA passes:
    ```bash
-   git checkout -b hospital/<hospital-id>
-   git add data/hospitals.json data/qa-reports/<hospital-id>.md data/column-maps/<hospital-id>.json  # if one exists
-   git commit -m "Worker: <hospital-id> ready for seed (QA passed)"
-   git push -u origin hospital/<hospital-id>
+   npm run publish-artifact -- <hospital-id>
    ```
-   The parsed NDJSON (`data/parsed/<hospital-id>.ndjson`) is **not** part of this commit -- it's gitignored, same as `prices.db`, and it's what the reconciler comes to fetch directly from this Sprite. Leave the Sprite running (or at least don't destroy it) until the reconciler has pulled it.
+   This uploads two objects to the Tigris bucket under `handoff/<hospital-id>/`: the parsed NDJSON, and a metadata JSON carrying the manifest entry, the QA report, the column map, and the artifact's sha256/size/line count. It refuses to publish without a QA report on disk, or if the manifest status isn't `qa_pending`.
 
-A worker never touches `main`, never opens the shared `prices.db`, and never seeds. Two workers on two different hospitals can run at the same time with zero coordination between them -- they don't share anything until the reconciler steps in.
+   **The worker's job ends here.** It does not push a branch, does not need git credentials, and does not need to stay reachable -- everything the reconciler needs is in the bucket. This replaced a git-branch-plus-`sprite file pull` handoff that failed in both halves on 2026-10-13: one worker died before it could push, the non-interactive recovery session had no git credentials to push with, and a single `sprite file pull` of a 681MB NDJSON exceeded a 30s server-side deadline and had to be split into chunks by hand. Later that same day a worker became unreachable for half an hour mid-"filesystem transition", which under the old design would have blocked its hospital entirely.
+
+A worker never touches `main`, never opens the shared `prices.db`, and never seeds. Two workers on two different hospitals can run at the same time with zero coordination between them -- they don't share anything, and now they don't even have to be alive at the same time as the reconciler.
+
+**Credentials:** `publish-artifact` needs the Tigris keys, which live in a gitignored `.env` at the repo root. A fresh clone won't have it, so copy it onto each new worker (`sprite file push .env <sprite>:hospital-price-transparency/.env`). `flyctl storage dashboard` shows the values again if needed.
 
 ## Reconciler role (run once per worker branch, wherever is convenient)
 
 The reconciler isn't a dedicated Sprite -- it's a role you run from wherever has `sprite` CLI access and the canonical `prices.db` (your laptop, a Claude Code session, or a Sprite you've designated for this). Per worker branch, ready to merge:
 
-1. **Review the branch.**
+1. **See what's waiting.**
    ```bash
-   git fetch origin hospital/<hospital-id>
-   git log origin/hospital/<hospital-id> -1 --stat
+   npm run fetch-artifact -- --list
    ```
-   Read the QA report on that branch (`data/qa-reports/<hospital-id>.md`) before pulling any data. If QA flagged something that should block (not just a non-blocking note), stop here and go back to the worker instead of proceeding.
 
-2. **Pull the parsed NDJSON directly from the worker Sprite** -- this is the one piece of data that needs to move:
+2. **Fetch the handoff.**
    ```bash
-   sprite file pull -s <worker-sprite-name> hospital-price-transparency/data/parsed/<hospital-id>.ndjson data/parsed/
+   npm run fetch-artifact -- <hospital-id>
    ```
-   No re-parsing, no object storage, no new credentials -- `sprite file pull` is a built-in `sprite` CLI command, confirmed available 2026-10-12.
+   Downloads the parsed NDJSON to `data/parsed/`, **verifies its sha256 against the publisher's**, and writes out the QA report and column map. It prints the manifest entry rather than merging it, since `data/hospitals.json` is the one file every session touches and silently rewriting it would undercut the git-pull-before-write convention in `adding-a-hospital.md`; pass `--apply-manifest` to merge it anyway.
 
-3. **Merge the branch**, so the manifest entry and QA report land on `main`:
+   Read the QA report before going further. If QA flagged something that should block (not just a non-blocking note), stop here and go back to the worker rather than seeding it.
+
+3. **Commit the small files to `main`** -- the manifest entry, QA report and column map that the worker no longer pushes itself:
    ```bash
    git checkout main && git pull
-   git merge origin/hospital/<hospital-id>
+   git add data/hospitals.json data/qa-reports/<hospital-id>.md data/column-maps/<hospital-id>.json
    ```
 
 4. **Seed, then build names.**
@@ -61,12 +62,7 @@ The reconciler isn't a dedicated Sprite -- it's a role you run from wherever has
    git push
    ```
 
-6. **Delete the worker branch** (its job is done, the content is on `main` now):
-   ```bash
-   git push origin --delete hospital/<hospital-id>
-   ```
-
-7. **Verify, publish, and check off the board.**
+6. **Verify, publish, and check off the board.**
    ```bash
    npm run verify-db      # actual row counts vs. the manifest -- catches a phantom "seeded"
    npm run publish-db     # versioned artifact + symlink flip, auto-rollback if checks fail
@@ -75,5 +71,5 @@ The reconciler isn't a dedicated Sprite -- it's a role you run from wherever has
 
 ## Open questions, not yet resolved
 
-- **Timing**: the worker Sprite needs to stay alive until its branch has been reconciled. No automated signal yet for "the reconciler is done, safe to destroy this worker" -- for now, that's a manual check (confirm the branch was deleted in step 6 above before tearing down the worker).
+- **Timing: resolved 2026-10-13.** This used to read "the worker needs to stay alive until its branch has been reconciled, and there's no automated signal for when it's safe to destroy one." Once the worker publishes to object storage, the question stops existing: a worker can be reset, restored from a checkpoint, or destroyed the moment `publish-artifact` returns, because nothing downstream reads its disk. Worth noting the fix came from the constraint rather than from building the signal -- the day a worker became unreachable for half an hour made it obvious that "keep the worker alive long enough" was the wrong thing to engineer.
 - **Conflicting column-map overrides**: if two workers independently hit the same vendor quirk and both propose a `data/column-maps/` file, there's no conflict (different hospital IDs, different filenames) -- but if a quirk turns out to be vendor-wide rather than hospital-specific (the kind of thing `schema-mapper` is now instructed to flag), reconciling that into a shared default (`DEFAULT_PROMOTIONS` in `scripts/parse-csv.js`) is still a manual judgment call, not automated.

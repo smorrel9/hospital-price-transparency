@@ -46,6 +46,21 @@ Verify before trusting anything else:
 sprite exec -- bash -c "cd hospital-price-transparency && node -e \"require('better-sqlite3')(':memory:')\""
 ```
 
+### Copy the Tigris credentials over
+
+A worker publishes its finished artifact to object storage, which needs the keys in `.env`. That file is gitignored, so a fresh clone won't have it:
+
+```bash
+sprite file push .env <sprite-name>:hospital-price-transparency/.env
+```
+
+`flyctl storage dashboard` shows the values again if you lose them. Without this, `publish-artifact` fails with a message naming exactly which variables are missing rather than an opaque SDK credentials error.
+
+Then confirm the whole worker is actually in a fit state before starting a hospital:
+```bash
+sprite exec -- bash -c "cd hospital-price-transparency && npm run worker-ready"
+```
+
 ## Run Claude Code inside the Sprite
 
 Claude Code comes pre-installed on Sprites. Open an interactive session:
@@ -82,9 +97,15 @@ sprite restore <version-id>   # if the parse goes badly
 
 ## Getting data back out
 
-Once `data/prices.db` is seeded and looks right, either:
-- `git push` from inside the Sprite if you want the DB tracked somewhere other than the Sprite (it's gitignored today, per `database-architecture.md`'s "don't store data in git" rule -- deploy straight from the Sprite instead), or
-- run `fly deploy` from inside the Sprite console, since it already has the repo and the built DB.
+```bash
+npm run publish-artifact -- <hospital-id>
+```
+
+That's the whole answer now. The worker uploads its parsed NDJSON plus the manifest entry, QA report and column map to the Tigris bucket, and a reconciler elsewhere picks it up with `npm run fetch-artifact -- <hospital-id>`. Nothing reads the Sprite's disk afterwards, so the worker can be reset, restored from a checkpoint, or destroyed as soon as that command returns.
+
+A worker never seeds and never deploys: there is no `prices.db` on a worker to get out. Seeding happens once, on the canonical database, and production is updated with `npm run publish-db` -- see `docs/multi-sprite-workflow.md`.
+
+This section used to suggest `git push`-ing the database or running `fly deploy` from inside the Sprite. Both are wrong under the current model, and the second one is how production ended up running stale scripts against current data on 2026-10-13.
 
 ## Shutting down
 

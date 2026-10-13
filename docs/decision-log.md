@@ -36,6 +36,20 @@ Open questions worth parking rather than deciding on the spot -- things to think
 
 This resolves the re-derive-vs-transfer question from below: neither. `sprite file pull`/`push` (built into the `sprite` CLI, confirmed available, not something that needed building) moves the one artifact that matters -- the parsed NDJSON -- directly between machines, without re-parsing from source and without standing up object storage (Tigris/S3) or new credentials anywhere. See `docs/multi-sprite-workflow.md` for the full worker/reconciler steps.
 
+**Superseded 2026-10-13: the handoff now goes through object storage after all.** The reasoning above was sound on the evidence then available and wrong within a day. Three failures, all in one day, all of them in the handoff rather than in the pipeline:
+
+1. A worker finished parse and QA overnight and died before pushing its branch. The work was intact on disk but invisible -- no branch, no manifest update, no signal of any kind.
+2. The recovery path could not push either: a non-interactive `sprite exec` session has no git credentials, so the designed git handoff was unavailable precisely when it was needed.
+3. `sprite file pull` of the 681MB Texas Children's NDJSON hit a ~30s server-side deadline and wrote nothing at all, so it had to be `split` into five chunks on the worker, pulled individually, and reassembled by hand.
+
+Then, while setting up the worker-reset work, a worker became unreachable for half an hour during a platform "filesystem transition" -- which under the old design would have blocked its hospital outright, with no ETA and no lever. That was the decisive one, because it is not a bug anyone can fix: *any* design where the reconciler reads the worker's disk makes every handoff depend on that worker still being there, and running two workers makes the odds worse rather than better.
+
+**What replaced it:** `scripts/publish-artifact.js` (worker) uploads the parsed NDJSON plus a metadata object -- manifest entry, QA report, column map, sha256, size, line count -- to a private Tigris bucket under `handoff/<hospital-id>/`. `scripts/fetch-artifact.js` (reconciler) lists, downloads, and verifies the checksum before anything is used. The AWS SDK brings multipart upload with per-part retries, so the chunk-splitting hack is gone.
+
+The thing to notice is what this *removes* rather than what it adds: the worker needs no git credentials, pushes no branch, and does not need to stay alive or reachable. Its job ends when `publish-artifact` returns. That settles two parked questions at once -- "drop the worker git-push requirement" from the worker-reset entry, and the teardown-timing question in `multi-sprite-workflow.md`, which simply stops existing. The cost is the one the original entry correctly predicted: a new credential (`.env`, gitignored) that has to reach every worker.
+
+Note the earlier entry's objection -- "a new dependency, credentials across every Sprite, and artifact lifecycle to manage" -- was accurate, not mistaken. It just turned out to be the cheaper problem. Artifact lifecycle is handled by retaining the last 2 handoffs per hospital and pruning on publish.
+
 **Original open question below, kept for context:**
 
 Per-hospital upsert is built (`docs/decision-log.md`'s own earlier note, now done). The producer/consumer split (parallel-safe stages vs. centralized seeding) is agreed and scaffolded. Re-derive vs. transfer is resolved above: transfer, via `sprite file pull`/`push`, no new infra.
