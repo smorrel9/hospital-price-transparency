@@ -10,6 +10,8 @@ Open questions worth parking rather than deciding on the spot -- things to think
 
 **Question:** `hospital-discovery` and `schema-mapper` haven't shown an analogous problem -- no observed incident, just symmetry with the fix just made. Worth adding the same explicit "here's what's fixed, everything else is your judgment" framing to those two as well, or leave them as-is until something actually comes up?
 
+**Update 2026-10-12:** a different but related incident did show up in `schema-mapper` -- a fresh Sprite session concluded an already-correctly-parsed file (Memorial Hermann) was mislabeled, reasoning from "pre-flight didn't run in this session" instead of checking the file's actual content (which was already correct). Added an explicit "check the artifact, not the process" instruction to both `schema-mapper.md` and `hospital-discovery.md` -- verify ground truth before concluding something is wrong, don't infer from whether a prior step happened to run in *this* session's visible history. This is a narrower, more specific fix than the full "judgment on tooling" framing `data-qa` got; whether that broader framing is still worth adding to these two remains open.
+
 **Status:** Open -- wanted to think on it rather than decide immediately.
 
 ### Multi-Sprite seeding: assembly line, not n-way coordination

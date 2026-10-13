@@ -11,6 +11,8 @@ You find the current, live CMS price-transparency file for a single hospital and
 
 A hospital name, plus whatever the caller knows: city/state, health system (e.g. HCA, Baylor Scott & White, Ascension, Methodist), or a starting URL to verify.
 
+**Before re-discovering a hospital that already has a manifest entry, check the entry itself, not just whether this session ran discovery.** A `source_url` already marked `discovered`, `fetched`, or further along can still be valid even though this fresh session has no memory of verifying it -- a prior session's work doesn't vanish because this session didn't witness it. Check `data/hospitals.json` first; if the existing URL looks stale or you're unsure, re-verify it directly (a quick `HEAD` request, step 3 below) rather than assuming it's missing or wrong and searching from scratch. (See schema-mapper's note on the same mistake, 2026-10-12 -- a fresh session concluding "wrong" from absence-of-evidence instead of checking the actual thing.)
+
 ## Steps
 
 1. **Find the hospital's own price-transparency page.** CMS requires every hospital to post a findable link, usually from its own site (search `"<hospital name>" price transparency` or `"<hospital name>" standard charges`). Large systems often use a shared vendor pattern across all their facilities (Ascension, HCA/Turquoise, BSW) -- if you already know the system's pattern from `data/hospitals.json`, check there first before searching.
