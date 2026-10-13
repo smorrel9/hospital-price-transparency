@@ -8,7 +8,7 @@
  * Usage: npm run parse-json
  */
 
-import { createReadStream, createWriteStream, mkdirSync, readdirSync } from 'fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parser as jsonParser } from 'stream-json/parser.js';
@@ -154,7 +154,22 @@ async function parseFile(filepath) {
 async function main() {
   mkdirSync(PARSED_DIR, { recursive: true });
 
-  const files = readdirSync(RAW_DIR).filter(f => f.endsWith('.json'));
+  // Single-hospital mode: `node scripts/parse-json.js <hospital_id>`.
+  // Same per-hospital scoping as parse-csv.js, for the same reason.
+  const targetHospital = process.argv[2];
+  let files;
+  if (targetHospital) {
+    const targetFile = `${targetHospital}.json`;
+    if (!existsSync(path.join(RAW_DIR, targetFile))) {
+      console.error(`No raw JSON found for "${targetHospital}" at data/raw/${targetFile}`);
+      process.exitCode = 1;
+      return;
+    }
+    files = [targetFile];
+  } else {
+    files = readdirSync(RAW_DIR).filter(f => f.endsWith('.json'));
+  }
+
   if (files.length === 0) {
     console.log('No JSON files found in data/raw/.');
     return;

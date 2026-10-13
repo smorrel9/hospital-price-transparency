@@ -32,13 +32,15 @@ Run this from a Claude Code session with access to this repo -- either locally, 
 
 4. **Map the schema, if pre-flight flagged anything.** Ask Claude Code to run the `schema-mapper` subagent against the new file, informed by the pre-flight findings. It proposes a column mapping and promotion rule, writing `data/column-maps/<hospital-id>.json`. **Review this before continuing** -- it's a diff against the default `COLUMN_MAP` in `scripts/parse-csv.js`, not a full replacement, so a short review is usually enough. If pre-flight came back clean, this step can usually be skipped.
 
-5. **Parse.**
+5. **Parse.** Pass the hospital ID to parse just that one raw file instead of rescanning all of `data/raw/` (some of which can be multi-GB):
    ```bash
-   npm run parse-data        # CSV, tall layout
-   npm run parse-data-wide   # CSV, wide layout (payer/plan in column names)
-   npm run parse-json        # JSON-format hospitals
+   node scripts/parse-csv.js <hospital_id>        # CSV, tall layout
+   node scripts/parse-csv-wide.js <hospital_id>   # CSV, wide layout (payer/plan in column names)
+   node scripts/parse-json.js <hospital_id>       # JSON-format hospitals
    ```
    Streams the raw file to `data/parsed/<hospital-id>.ndjson`, applying the column map and any code-type promotion rules. Running the wrong script against a file just logs a "detected X layout, skipping" message and leaves any existing output untouched -- it won't clobber anything.
+
+   The old no-args form (`npm run parse-data` / `parse-data-wide` / `parse-json`) still works and reparses everything in `data/raw/` -- only use it for an initial full build, not for adding one hospital. Built 2026-10-12, same reasoning as `seed-db.js`'s per-hospital upsert.
 
 6. **QA.** Ask Claude Code to run the `data-qa` subagent against the new NDJSON. It checks row survival rate, code-type distribution, price sanity, null rates, cross-hospital code overlap, and payer-name hygiene, then writes `data/qa-reports/<hospital-id>.md` with a pass/flag verdict and a recommendation. **Read the recommendation before seeding** -- this is the full-data check behind pre-flight's quick sample, and it's still worth running even after a clean pre-flight.
 

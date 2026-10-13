@@ -304,7 +304,25 @@ async function parseFile(filepath) {
 async function main() {
   mkdirSync(PARSED_DIR, { recursive: true });
 
-  const files = readdirSync(RAW_DIR).filter(f => f.endsWith('.csv'));
+  // Single-hospital mode: `node scripts/parse-csv.js <hospital_id>` parses
+  // just that one raw file instead of rescanning all of data/raw/. Mirrors
+  // seed-db.js's per-hospital upsert -- re-parsing every hospital's raw
+  // file (some multi-GB) every time one hospital changes was the same
+  // "redoes work across the whole dataset" pattern seed-db.js had.
+  const targetHospital = process.argv[2];
+  let files;
+  if (targetHospital) {
+    const targetFile = `${targetHospital}.csv`;
+    if (!existsSync(path.join(RAW_DIR, targetFile))) {
+      console.error(`No raw CSV found for "${targetHospital}" at data/raw/${targetFile}`);
+      process.exitCode = 1;
+      return;
+    }
+    files = [targetFile];
+  } else {
+    files = readdirSync(RAW_DIR).filter(f => f.endsWith('.csv'));
+  }
+
   if (files.length === 0) {
     console.log('No CSV files found in data/raw/. Run "npm run fetch-data" first.');
     return;
