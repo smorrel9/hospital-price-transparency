@@ -15,9 +15,7 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
-
-const DB_PATH = path.join(process.cwd(), 'data', 'prices.db');
+import { DB_PATH } from './paths.js';
 
 // Hand-curated friendly names for the most consumer-relevant procedures.
 // Format: CPT code -> { name, searchTerms (extra keywords for search) }

@@ -16,9 +16,7 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
-
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'prices.db');
+import { DB_PATH } from './paths.js';
 
 const CATEGORY_PATTERNS = [
   { category: 'BCBS',     test: n => /BCBS|Blue\s*Cross|BLUE/i.test(n) },

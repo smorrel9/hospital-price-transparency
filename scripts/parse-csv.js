@@ -20,10 +20,7 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync
 import { parse } from 'csv-parse';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
-const RAW_DIR = path.join(process.cwd(), 'data', 'raw');
-const PARSED_DIR = path.join(process.cwd(), 'data', 'parsed');
-const COLUMN_MAPS_DIR = path.join(process.cwd(), 'data', 'column-maps');
+import { RAW_DIR, PARSED_DIR, COLUMN_MAPS_DIR } from './paths.js';
 
 // Default code-type promotion rules, applied after code-slot selection.
 // Per-hospital overrides (data/column-maps/<id>.json) can add more.
@@ -314,7 +311,7 @@ async function main() {
   if (targetHospital) {
     const targetFile = `${targetHospital}.csv`;
     if (!existsSync(path.join(RAW_DIR, targetFile))) {
-      console.error(`No raw CSV found for "${targetHospital}" at data/raw/${targetFile}`);
+      console.error(`No raw CSV found for "${targetHospital}" at ${path.join(RAW_DIR, targetFile)}`);
       process.exitCode = 1;
       return;
     }
@@ -334,7 +331,7 @@ async function main() {
     console.log();
   }
 
-  console.log('Done. Run "npm run seed-db" next.');
+  console.log('Done. Seed next: node scripts/seed-db.js <hospital_id>');
 }
 
 // Only run when executed directly (`node scripts/parse-csv.js`), not when

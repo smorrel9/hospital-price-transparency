@@ -5,7 +5,8 @@
  * Reads NDJSON (one JSON object per line) to avoid loading the full dataset
  * into memory. Uses batch inserts for performance.
  *
- * Usage: npm run seed-db
+ * Usage: node scripts/seed-db.js <hospital_id>   (one hospital, non-destructive)
+ *        npm run seed-db:rebuild                 (destructive full rebuild)
  */
 
 import { createReadStream, readdirSync, unlinkSync, existsSync } from 'fs';
@@ -13,9 +14,8 @@ import { createInterface } from 'readline';
 import Database from 'better-sqlite3';
 import path from 'path';
 import { buildSummaryStats } from './build-summary-stats.js';
+import { DB_PATH, PARSED_DIR, IS_PRODUCTION } from './paths.js';
 
-const PARSED_DIR = path.join(process.cwd(), 'data', 'parsed');
-const DB_PATH = path.join(process.cwd(), 'data', 'prices.db');
 const BATCH_SIZE = 5000;
 
 // Only keep consumer-useful code types (drop RC, CDM, NULL)
@@ -203,8 +203,38 @@ function createIndexes(db) {
   console.log('  Indexes created.');
 }
 
+function usage(reason) {
+  if (reason) console.error(`\n${reason}\n`);
+  console.error(`Usage:
+  node scripts/seed-db.js <hospital_id>   Replace one hospital's rows (needs an existing DB)
+  node scripts/seed-db.js --rebuild-all   DESTRUCTIVE: delete the DB and rebuild from every
+                                          file in data/parsed/
+
+Database: ${DB_PATH}
+
+A bare invocation does nothing on purpose. The no-args full rebuild used to be
+the default, which deleted the live production database on 2026-10-13 -- the
+destructive path now has to be asked for by name. See docs/known-issues.md.`);
+}
+
 async function main() {
-  const targetHospital = process.argv[2];
+  const args = process.argv.slice(2);
+  const rebuildAll = args.includes('--rebuild-all');
+  const allowProduction = args.includes('--allow-production');
+  const targetHospital = args.find(a => !a.startsWith('--'));
+
+  if (!targetHospital && !rebuildAll) {
+    usage();
+    process.exitCode = 1;
+    return;
+  }
+  if (targetHospital && rebuildAll) {
+    usage('Pass either a hospital id or --rebuild-all, not both.');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(`[seed] database: ${DB_PATH}`);
 
   // Single-hospital upsert mode: `node scripts/seed-db.js <hospital_id>`.
   // Requires an existing DB -- this replaces one hospital's rows in place,
@@ -217,7 +247,7 @@ async function main() {
       return;
     }
     if (!existsSync(DB_PATH)) {
-      console.error(`No existing database at ${DB_PATH} -- run a full seed first (npm run seed-db with no args).`);
+      console.error(`No existing database at ${DB_PATH} -- build one first with "npm run seed-db:rebuild".`);
       process.exitCode = 1;
       return;
     }
@@ -233,10 +263,33 @@ async function main() {
     return;
   }
 
-  // Remove old DB
+  // Full rebuild from scratch. Destructive and explicitly opt-in.
+  if (IS_PRODUCTION && !allowProduction) {
+    console.error(`Refusing to rebuild: NODE_ENV=production and this would delete ${DB_PATH}.
+
+To add or refresh a single hospital, pass its id instead -- that path is
+non-destructive to every other hospital. If you genuinely mean to rebuild the
+deployed database in place, re-run with --allow-production, and read
+docs/decision-log.md ("Production data deploys") first: the intended way to
+publish data is to build an artifact elsewhere and swap it in, not to rebuild
+the database a live server is reading.`);
+    process.exitCode = 1;
+    return;
+  }
+
   if (existsSync(DB_PATH)) {
+    // Say out loud what is about to be destroyed. A silent "Removed old
+    // database." is what this looked like while it deleted 8.1M live rows.
+    let existing = 'unreadable';
+    try {
+      const old = new Database(DB_PATH, { readonly: true });
+      existing = `${old.prepare('SELECT COUNT(*) as n FROM procedures').get().n.toLocaleString()} rows`;
+      old.close();
+    } catch {
+      // Corrupt or truncated file -- rebuilding over it is the right move anyway.
+    }
+    console.log(`[seed] deleting existing database (${existing})`);
     unlinkSync(DB_PATH);
-    console.log('Removed old database.');
   }
 
   const db = new Database(DB_PATH);

@@ -12,9 +12,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, re
 import { pipeline } from 'stream/promises';
 import path from 'path';
 import { execSync } from 'child_process';
-
-const RAW_DIR = path.join(process.cwd(), 'data', 'raw');
-const MANIFEST_PATH = path.join(process.cwd(), 'data', 'hospitals.json');
+import { RAW_DIR, MANIFEST_PATH } from './paths.js';
 
 function loadManifest() {
   return JSON.parse(readFileSync(MANIFEST_PATH, 'utf-8'));

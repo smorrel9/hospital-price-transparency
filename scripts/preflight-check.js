@@ -38,8 +38,7 @@ import { streamArray } from 'stream-json/streamers/stream-array.js';
 import { pick } from 'stream-json/filters/pick.js';
 import chain from 'stream-chain';
 import { COLUMN_MAP, detectLayout } from './parse-csv.js';
-
-const RAW_DIR = path.join(process.cwd(), 'data', 'raw');
+import { RAW_DIR } from './paths.js';
 
 // Expected code shape per labeled type. Used to flag likely mislabeling,
 // not to silently fix it -- a hospital-specific promotion rule still needs
@@ -284,7 +283,7 @@ async function main() {
     console.log(`[preflight] ${hospitalId}.json`);
     result = await preflightJson(jsonPath);
   } else {
-    console.log(`No raw file found for "${hospitalId}" in data/raw/. Run "npm run fetch-data" first.`);
+    console.log(`No raw file found for "${hospitalId}" in ${RAW_DIR}. Run "npm run fetch-data" first.`);
     process.exit(1);
   }
 

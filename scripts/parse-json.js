@@ -16,9 +16,7 @@ import { streamArray } from 'stream-json/streamers/stream-array.js';
 import { pick } from 'stream-json/filters/pick.js';
 import chain from 'stream-chain';
 import { loadOverride } from './parse-csv.js';
-
-const RAW_DIR = path.join(process.cwd(), 'data', 'raw');
-const PARSED_DIR = path.join(process.cwd(), 'data', 'parsed');
+import { RAW_DIR, PARSED_DIR } from './paths.js';
 
 function parsePrice(val) {
   if (val == null || val === '') return null;
@@ -161,7 +159,7 @@ async function main() {
   if (targetHospital) {
     const targetFile = `${targetHospital}.json`;
     if (!existsSync(path.join(RAW_DIR, targetFile))) {
-      console.error(`No raw JSON found for "${targetHospital}" at data/raw/${targetFile}`);
+      console.error(`No raw JSON found for "${targetHospital}" at ${path.join(RAW_DIR, targetFile)}`);
       process.exitCode = 1;
       return;
     }

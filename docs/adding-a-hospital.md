@@ -50,11 +50,11 @@ Run this from a Claude Code session with access to this repo -- either locally, 
    ```
    This deletes and re-seeds only that hospital's rows -- other hospitals, indexes, and the precomputed summary-stats tables are untouched/refreshed automatically. Built 2026-10-12 after the full-rebuild path became the bottleneck at 7 hospitals; see `docs/decision-log.md`.
 
-   Only run a full rebuild (`npm run seed-db`, no args) if there's no existing database yet, or if you deliberately want to rebuild from scratch.
+   Only run a full rebuild (`npm run seed-db:rebuild`) if there's no existing database yet, or if you deliberately want to rebuild from scratch. That path deletes the database first, so it has to be asked for by name -- a bare `node scripts/seed-db.js` prints usage and exits rather than rebuilding. It also refuses to run when `NODE_ENV=production` unless you add `--allow-production`. Both guards exist because the old no-args default deleted the live production database on 2026-10-13 (see `docs/known-issues.md`).
 
 8. **`git pull`, then update the manifest status** to `seeded` for the hospital in `data/hospitals.json` (see "Working in parallel" above). Safe to just always run `npm run build-names` at this point -- as of 2026-10-12 it's incremental by default (only processes codes not already in `friendly_names`, keyed by code, not by hospital), so re-running it after a hospital that introduced no new codes is nearly free. Pass `--full` only if you've changed the `CURATED` dict or `expandAbbreviations()` logic itself and need to regenerate everything.
 
-9. **Deploy.** Same as always -- `fly deploy` (or whatever your current Fly.io deploy step is) once `data/prices.db` looks right locally.
+9. **Deploy.** `fly deploy` ships **code only**. `prices.db` lives on a mounted Fly volume, so a deploy does not publish data -- code and data version independently, which is how production came to be running two-day-old scripts against current data on 2026-10-13. Publishing data currently means getting the verified DB onto the volume by hand; the intended replacement (build a versioned artifact, verify it, swap it in by symlink) is Phase 3 in `docs/decision-log.md` ("Production data deploys"). Until that exists, treat any production data operation as needing a deploy first, so the scripts you invoke there are the ones you reasoned about.
 
 10. **Check it off.** Mark the hospital Done (and set its City) on the [Hospital Onboarding Queue](https://github.com/users/smorrel9/projects/1) project board.
 
