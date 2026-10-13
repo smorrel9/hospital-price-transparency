@@ -228,13 +228,25 @@ function expandAbbreviations(desc) {
 }
 
 async function main() {
+  // --full rebuilds every code's friendly name from scratch -- needed after
+  // changing CURATED or expandAbbreviations(), since those could change the
+  // output for codes that already have an entry. Default is incremental:
+  // friendly_names is keyed purely by code (not by hospital), so a code
+  // already covered by one hospital doesn't need recomputing just because
+  // a different hospital reports it too -- the old default re-ran the full
+  // CURATED/expandAbbreviations pass over every CPT/HCPCS code in the
+  // database on every single run, even though 95-99% of codes overlap
+  // across hospitals (per the QA reports) and already had correct entries.
+  const fullRebuild = process.argv.includes('--full');
+
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
 
-  // Create friendly_names table
+  if (fullRebuild) {
+    db.exec(`DROP TABLE IF EXISTS friendly_names;`);
+  }
   db.exec(`
-    DROP TABLE IF EXISTS friendly_names;
-    CREATE TABLE friendly_names (
+    CREATE TABLE IF NOT EXISTS friendly_names (
       code TEXT PRIMARY KEY,
       code_type TEXT,
       original_description TEXT,
@@ -243,15 +255,24 @@ async function main() {
     );
   `);
 
-  // Get all unique CPT/HCPCS codes
+  // Get CPT/HCPCS codes that don't already have a friendly name (or, in
+  // --full mode, every CPT/HCPCS code).
   const codes = db.prepare(`
-    SELECT DISTINCT code, code_type, description
-    FROM procedures
-    WHERE code_type IN ('CPT', 'HCPCS')
-    ORDER BY code
+    SELECT DISTINCT p.code, p.code_type, p.description
+    FROM procedures p
+    ${fullRebuild ? '' : 'LEFT JOIN friendly_names fn ON fn.code = p.code'}
+    WHERE p.code_type IN ('CPT', 'HCPCS')
+    ${fullRebuild ? '' : 'AND fn.code IS NULL'}
+    ORDER BY p.code
   `).all();
 
-  console.log(`Processing ${codes.length} CPT/HCPCS codes...`);
+  console.log(fullRebuild
+    ? `Processing ${codes.length} CPT/HCPCS codes (full rebuild)...`
+    : `Processing ${codes.length} new CPT/HCPCS codes (incremental -- pass --full to rebuild everything)...`);
+
+  if (codes.length === 0) {
+    console.log('Nothing new. Rebuilding the FTS index in case anything changed underneath it.');
+  }
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO friendly_names (code, code_type, original_description, friendly_name, search_terms)
@@ -305,7 +326,8 @@ async function main() {
       SELECT code, friendly_name, search_terms FROM friendly_names;
   `);
 
-  console.log(`Done: ${curatedCount} curated, ${expandedCount} auto-expanded`);
+  const total = db.prepare('SELECT COUNT(*) as n FROM friendly_names').get().n;
+  console.log(`Done: ${curatedCount} curated, ${expandedCount} auto-expanded (${total.toLocaleString()} total in friendly_names)`);
   console.log(`FTS index created on friendly names`);
 
   // Sample output

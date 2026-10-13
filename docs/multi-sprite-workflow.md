@@ -47,11 +47,12 @@ The reconciler isn't a dedicated Sprite -- it's a role you run from wherever has
    git merge origin/hospital/<hospital-id>
    ```
 
-4. **Seed.**
+4. **Seed, then build names.**
    ```bash
    node scripts/seed-db.js <hospital_id>
+   npm run build-names
    ```
-   Per-hospital upsert against the canonical `prices.db` -- other hospitals untouched, indexes and summary-stats tables refreshed automatically.
+   Per-hospital upsert against the canonical `prices.db` -- other hospitals untouched, indexes and summary-stats tables refreshed automatically. `build-names` is incremental by default (only processes codes not already in `friendly_names`), so it's safe and cheap to always run it here rather than deciding case by case whether this hospital introduced new codes.
 
 5. **Update the manifest status to `seeded`**, commit, push to `main`:
    ```bash

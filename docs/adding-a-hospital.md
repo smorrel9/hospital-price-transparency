@@ -52,7 +52,7 @@ Run this from a Claude Code session with access to this repo -- either locally, 
 
    Only run a full rebuild (`npm run seed-db`, no args) if there's no existing database yet, or if you deliberately want to rebuild from scratch.
 
-8. **`git pull`, then update the manifest status** to `seeded` for the hospital in `data/hospitals.json` (see "Working in parallel" above). `build-names` only needs to run once per hospital if it introduced genuinely new codes not covered by the curated/auto-expand logic -- check `data/qa-reports/<hospital-id>.md` for any flagged friendly-name gaps before deciding whether to re-run it.
+8. **`git pull`, then update the manifest status** to `seeded` for the hospital in `data/hospitals.json` (see "Working in parallel" above). Safe to just always run `npm run build-names` at this point -- as of 2026-10-12 it's incremental by default (only processes codes not already in `friendly_names`, keyed by code, not by hospital), so re-running it after a hospital that introduced no new codes is nearly free. Pass `--full` only if you've changed the `CURATED` dict or `expandAbbreviations()` logic itself and need to regenerate everything.
 
 9. **Deploy.** Same as always -- `fly deploy` (or whatever your current Fly.io deploy step is) once `data/prices.db` looks right locally.
 
