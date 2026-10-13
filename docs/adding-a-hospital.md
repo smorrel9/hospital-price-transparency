@@ -8,6 +8,8 @@ Run this from a Claude Code session with access to this repo -- either locally, 
 
 `data/hospitals.json` is the one file every session touches, no matter which hospital it's working on -- it's the collision point if more than one Sprite or teammate is adding hospitals at the same time. `git pull` before any step that writes to it (discovery writing a new entry, updating status to `seeded`, etc.) -- a stale push just gets rejected by git, so this isn't a data-loss risk, but pulling first avoids the rejection (and the pause to sort it out) entirely. This is already built into the `hospital-discovery` subagent's own steps; the manual status-update steps below need the same habit.
 
+**Running two or more Sprites genuinely in parallel, each on a different hospital at the same time?** Follow `docs/multi-sprite-workflow.md` instead of the steps below -- git-pull-before-write is enough for the occasional collision, but true parallel work needs each Sprite to stop short of seeding and push a branch for a separate reconciler step, not write straight to `main`.
+
 ## Steps
 
 1. **Add the hospital.** Tell Claude Code the hospital name (and city/state or health system if you know it). It should invoke the `hospital-discovery` subagent, which finds the CMS MRF URL, verifies it resolves, pulls, and writes an entry to `data/hospitals.json` with `status: "discovered"`.
