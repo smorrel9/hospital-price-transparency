@@ -66,7 +66,12 @@ The reconciler isn't a dedicated Sprite -- it's a role you run from wherever has
    git push origin --delete hospital/<hospital-id>
    ```
 
-7. **Deploy and check off the board**, same as `adding-a-hospital.md` steps 9-10.
+7. **Verify, publish, and check off the board.**
+   ```bash
+   npm run verify-db      # actual row counts vs. the manifest -- catches a phantom "seeded"
+   npm run publish-db     # versioned artifact + symlink flip, auto-rollback if checks fail
+   ```
+   `verify-db` is the step that would have caught Memorial Hermann sitting at `status: "seeded"` with zero rows in the canonical database, which is exactly the failure this reconciler role exists to prevent -- a worker's manifest entry is a claim, and the database is the only thing that settles it. Then mark it Done on the board, same as `adding-a-hospital.md` step 10.
 
 ## Open questions, not yet resolved
 

@@ -34,6 +34,7 @@ import { statSync, existsSync, createReadStream, openSync, readSync, closeSync, 
 import { createHash } from 'crypto';
 import { execFileSync, spawnSync } from 'child_process';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { DB_PATH, REPO_ROOT } from './paths.js';
 import * as fly from './fly-remote.js';
 import { quoteRemote as q } from './fly-remote.js';
@@ -52,7 +53,10 @@ const KEEP = Number(opt('keep', 3));
 const CHUNK = Number(opt('chunk-mb', 512)) * 1024 * 1024;
 const SOURCE = opt('source', DB_PATH);
 
-const GB = n => `${(n / 1024 ** 3).toFixed(2)}GB`;
+const GB = n =>
+  n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)}GB`
+  : n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)}MB`
+  : `${n}B`;
 
 function versionName() {
   const date = new Date().toISOString().slice(0, 10);
@@ -99,7 +103,7 @@ function publicUrl() {
  * landed. Only complete chunks are ever appended, so an interrupted run
  * resumes on a boundary; a partially appended tail is trimmed first.
  */
-async function uploadResumable(source, remotePath) {
+export async function uploadResumable(source, remotePath, chunkBytes = CHUNK) {
   const total = statSync(source).size;
   let already = fly.remoteSize(remotePath);
   if (already < 0) already = 0;
@@ -111,7 +115,15 @@ async function uploadResumable(source, remotePath) {
     );
   }
 
-  const aligned = Math.floor(already / CHUNK) * CHUNK;
+  // Already complete. Check this before the alignment test below: a file whose
+  // size is not a chunk multiple always looks "misaligned", so without this a
+  // re-run would trim the final partial chunk and re-send it.
+  if (already === total) {
+    console.log(`  already complete at ${GB(total)}, nothing to upload`);
+    return;
+  }
+
+  const aligned = Math.floor(already / chunkBytes) * chunkBytes;
   if (aligned !== already) {
     console.log(`  trimming partial tail: ${GB(already)} -> ${GB(aligned)}`);
     fly.ssh(`truncate -s ${aligned} ${q(remotePath)}`);
@@ -123,8 +135,8 @@ async function uploadResumable(source, remotePath) {
   const tmpRemote = `${REMOTE_DIR}/.publish-chunk.tmp`;
   const fd = openSync(source, 'r');
   try {
-    for (let offset = already; offset < total; offset += CHUNK) {
-      const size = Math.min(CHUNK, total - offset);
+    for (let offset = already; offset < total; offset += chunkBytes) {
+      const size = Math.min(chunkBytes, total - offset);
       const buf = Buffer.allocUnsafe(size);
       let read = 0;
       while (read < size) read += readSync(fd, buf, read, size - read, offset + read);
@@ -277,7 +289,11 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(`\nFAILED: ${err.message}`);
-  process.exitCode = 1;
-});
+// Guarded so the resumable uploader above can be imported and exercised on its
+// own without publishing anything -- same pattern as the parse scripts.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch(err => {
+    console.error(`\nFAILED: ${err.message}`);
+    process.exitCode = 1;
+  });
+}

@@ -108,7 +108,19 @@ This subsumes "take a backup before destructive ops" by never having a destructi
 
 **Why this order:** 1-3 stop the bleeding and cost about an hour. 4-6 are what turn "is it actually fine?" from a judgment call into one command -- the absence of that is what made 2026-10-13 confusing rather than merely bad. 7-9 make the operation performed most often, publishing data, reversible. Concurrency comes last because parallelism multiplies whatever reliability you already have, and right now that multiplier is below one.
 
-**Status:** Phase 0 in flight. Phases 1-3 agreed, not started.
+**Done 2026-10-13, same day.** All four phases except the Sprite work:
+
+- *Phase 0:* service restored by re-uploading the verified local DB. The resumable-by-hand recovery (append the missing 266MB tail rather than re-send 4.7GB) is what later became `publish-db.js`'s uploader.
+- *Phase 1:* `seed-db.js`'s full rebuild now requires `--rebuild-all` and refuses under `NODE_ENV=production`; `scripts/paths.js` resolves every path from file location with `DB_PATH` winning, so the same command can no longer mean different things from different directories. Verified by running the exact command that caused the outage, on production: it printed usage and resolved `/data/prices.db` correctly with no `cd`.
+- *Phase 2:* `verify-db.js` and `smoke.js`. Smoke found a real defect on its first run -- `/api/payers`, a fourth endpoint of the 2026-10-12 full-table-aggregate class that the original fix missed, 45.4s for 675 rows and a site-wide freeze per request. Removed rather than precomputed, since nothing called it. The latency budget is what caught it; a 200-only check would have passed.
+- *Phase 3:* `publish-db.js` / `rollback-db.js` / `db-artifacts.js` / `fly-remote.js`, and production cut over to `prices.db -> prices-2026-10-13-ff08583.db`. The cutover needed no transfer and no deploy: the live file was renamed to a versioned name and the symlink put in its place.
+
+**Two things worth keeping from building it:**
+
+- *The symlink can live at `/data/prices.db` itself*, so `DB_PATH` never changes and rollback does not depend on a working build or a deploy. This rested on an assumption worth testing rather than reasoning about: SQLite names `-wal`/`-shm` after the **resolved** path, not the opened one. Tested locally first, then confirmed in production, where `prices-2026-10-13-ff08583.db-wal` duly appeared beside the versioned file. Each version therefore owns its own journal and a flip cannot bind a stale WAL to a different artifact. The flip also repoints *before* restarting, so the running server keeps serving from its open descriptor and there is no window where the path is missing.
+- *Testing the uploader found a bug that correctness checks would have hidden.* A re-run against an already-complete file trimmed its final partial chunk and re-sent it, because a file whose size is not a chunk multiple always looks misaligned. The checksum still matched, so nothing would ever have reported it -- it would just have silently re-sent up to 512MB on every retry. Fixed with a completeness short-circuit ahead of the alignment test.
+
+**Status:** Phases 0-3 done and deployed. Phase 4 (Sprite scaling) is now unblocked -- see the worker-reset entry below, which was deliberately parked until this landed.
 
 ### Medallion layering: we already have one, and the preciousness is inverted
 

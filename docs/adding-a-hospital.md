@@ -54,7 +54,19 @@ Run this from a Claude Code session with access to this repo -- either locally, 
 
 8. **`git pull`, then update the manifest status** to `seeded` for the hospital in `data/hospitals.json` (see "Working in parallel" above). Safe to just always run `npm run build-names` at this point -- as of 2026-10-12 it's incremental by default (only processes codes not already in `friendly_names`, keyed by code, not by hospital), so re-running it after a hospital that introduced no new codes is nearly free. Pass `--full` only if you've changed the `CURATED` dict or `expandAbbreviations()` logic itself and need to regenerate everything.
 
-9. **Deploy.** `fly deploy` ships **code only**. `prices.db` lives on a mounted Fly volume, so a deploy does not publish data -- code and data version independently, which is how production came to be running two-day-old scripts against current data on 2026-10-13. Publishing data currently means getting the verified DB onto the volume by hand; the intended replacement (build a versioned artifact, verify it, swap it in by symlink) is Phase 3 in `docs/decision-log.md` ("Production data deploys"). Until that exists, treat any production data operation as needing a deploy first, so the scripts you invoke there are the ones you reasoned about.
+9. **Publish the data.**
+   ```bash
+   npm run publish-db
+   ```
+   This is the only supported way to get data into production. It gates on `verify-db`, uploads the database as a new immutable artifact (`/data/prices-<date>-<sha>.db`) using resumable chunks, requires the remote sha256 to match local before anything goes live, repoints the `/data/prices.db` symlink, restarts, then runs `verify-db` and `smoke` against the running site -- **and rolls back automatically if either fails**. It keeps the last 3 versions.
+
+   If something looks wrong afterwards:
+   ```bash
+   npm run rollback-db -- --list     # what's published, what's live
+   npm run rollback-db               # back to the previous version, in seconds
+   ```
+
+   Note `fly deploy` ships **code only** -- `prices.db` lives on a mounted volume, so code and data version independently. That's how production came to be running two-day-old scripts against current data on 2026-10-13. Deploy when you change code; `publish-db` when you change data. Never run a seed script against the serving database: that's what caused that outage, and `seed-db.js` now refuses to under `NODE_ENV=production`.
 
 10. **Check it off.** Mark the hospital Done (and set its City) on the [Hospital Onboarding Queue](https://github.com/users/smorrel9/projects/1) project board.
 
