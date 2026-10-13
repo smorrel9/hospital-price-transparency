@@ -58,6 +58,16 @@ claude
 
 From there, the `.claude/agents/` subagents (`hospital-discovery`, `schema-mapper`, `data-qa`) work exactly as they do locally -- same repo, same subagent files, just running on Fly.io's storage instead of yours. Follow `docs/adding-a-hospital.md` as normal.
 
+### Shared memory (SenseLab) -- pilot, schema-mapper only
+
+`.mcp.json` points Claude Code at the SenseLab memory server, so what `schema-mapper` learns on one Sprite is there on the next fresh clone. The approval and the sign-in are per machine -- doing them on your laptop does nothing for the Sprite. First time in a Sprite's `claude` session:
+
+1. Approve the `senselab` server when Claude Code asks about the project's MCP servers (or run `/mcp`).
+2. Ask Claude to authenticate senselab; it gives you a URL to open in your own browser.
+3. After you authorize, the browser redirects to a `http://localhost:<port>/callback?...` page that will fail to load -- that's expected, the Sprite isn't your laptop. Copy the full URL from the address bar and paste it back into the Sprite's Claude session to finish.
+
+Not yet confirmed: whether the sign-in survives the Sprite pausing and waking. If `schema-mapper` reports the SenseLab tools weren't available, repeat steps 2-3.
+
 Detach without killing the session: `Ctrl+\`. Reattach any time with `sprite console` again -- state persists.
 
 ## Checkpoints (your undo button)
