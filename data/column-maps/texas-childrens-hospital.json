@@ -1,0 +1,12 @@
+{
+  "columnMap": {},
+  "promotions": [
+    {
+      "from": "CPT",
+      "to": "HCPCS",
+      "pattern": "^[A-Z]\\d{4}$",
+      "note": "code|3|type=CPT is a mixed bucket: 65,508 of 328,167 CPT-labeled code|3 values (20%) are letter+4-digit HCPCS Level II codes (C1713, P9011, C1776, A7520, L8699, etc.), not CPT. The remaining 261,885 are genuine 5-digit-numeric CPT and 774 are genuine alphanumeric CPT Category III/PLA codes (0509T, 0141U, 0020M -- digits-then-letter, so they don't match this pattern and stay CPT). This is the reverse of the existing BSW/Houston Methodist default promotion (HCPCS mislabeled as CPT); here CPT is mislabeled as HCPCS-shaped codes. Verified against full raw file, not just the preflight sample."
+    }
+  ],
+  "notes": "Headers in the real header row (row 3) already match scripts/parse-csv.js's default COLUMN_MAP exactly (description, code|1..4(+|type), billing_class, modifiers, setting, drug_unit_of_measurement, drug_type_of_measurement, standard_charge|gross, standard_charge|discounted_cash, payer_name, plan_name, standard_charge|negotiated_dollar/percentage/algorithm/methodology/min/max, median_amount, 10th_percentile, 90th_percentile, count, additional_generic_notes) -- no columnMap override needed. code|3 (mapped to hcpcs_code/hcpcs_code_type) is used as a generic cross-reference procedure-code slot, same pattern as BSW, and it carries CPT, HCPCS, and NDC labels. Within the CPT-labeled subset, 20% of codes are letter+4-digit (HCPCS Level II shape) rather than 5-digit numeric (true CPT shape) -- see the promotion rule above. The existing HCPCS-labeled subset in the same column is 99.8% shape-correct already (933,988/935,489), so no change needed there. Full-file scan (1,432,826 data rows), not just the preflight sample. No row-count impact: this is a relabeling only, selectCode() picks code|3 as the primary code regardless of whether its type says CPT or HCPCS (both priority 1), so the fix only affects code_type on output, not row survival."
+}
