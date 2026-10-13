@@ -30,12 +30,14 @@ Sprites don't have a built-in continuous file-sync command -- the straightforwar
 
 ```bash
 sprite exec -- git clone https://github.com/smorrel9/hospital-price-transparency.git
-sprite exec -- bash -c "cd hospital-price-transparency && npm install"
+sprite exec -- bash -c "cd hospital-price-transparency && npm ci"
 ```
 
 If you have uncommitted local changes you want on the Sprite too, commit and push them first -- there isn't a reason to build a separate sync mechanism for an occasional-use sandbox.
 
-**Gotcha: `npm install` silently skips native builds on a fresh Sprite.** Sprites block `install`/`postinstall` lifecycle scripts by default (a supply-chain security measure) -- `npm install` will warn about it but exit 0, so it's easy to miss. This means `better-sqlite3`'s native binary never gets compiled, and anything touching the DB (`seed-db`, `server`) will fail with a missing-module error. Fix:
+**Use `npm ci`, not `npm install`.** Confirmed on a fresh `hpt-worker-2` 2026-10-13: `npm install` rewrites `package-lock.json` (it strips `"peer": true` markers that a different npm version wrote), which leaves the tree dirty and makes `worker-ready` fail its clean-tree check on *every* newly set-up worker. `npm ci` installs strictly from the lockfile, does not rewrite it, and still builds the native module correctly -- verified both.
+
+**Gotcha, now fixed in `package.json`: native builds used to be silently skipped on a fresh Sprite.** Sprites block `install`/`postinstall` lifecycle scripts by default (a supply-chain security measure), and npm warns but exits 0 -- so it was easy to miss that `better-sqlite3`'s native binary never compiled, and anything touching the DB failed later with a missing-module error. The `allowScripts` field in `package.json` now pre-approves `better-sqlite3` and `esbuild`, and a fresh clone needs no manual step (re-confirmed on `hpt-worker-2`). If it ever regresses:
 
 ```bash
 sprite exec -- bash -c "cd hospital-price-transparency && npm install-scripts approve better-sqlite3 esbuild && npm rebuild better-sqlite3"
