@@ -123,7 +123,12 @@ function DrgBanner({ drg }) {
   const tooltip = [
     `CMS IPPS operating payment for MS-DRG ${drg.drg_code} (FY ${drg.year || 2026}).`,
     `Calculated as: federal standardized amount × DRG weight (${drg.weight}) × wage-adjusted base × (1 + IME) × (1 + DSH).`,
-    `Each Austin hospital has different IME (teaching) and DSH (low-income patient) factors, which is why the range exists.`,
+    // Deliberately does not name a city: IME/DSH factors are published for only
+    // some of the hospitals in this database, and which ones will change as
+    // coverage grows. Saying "each Austin hospital" was wrong the moment
+    // non-Austin hospitals were added. See docs/known-issues.md.
+    `Hospitals have different IME (teaching) and DSH (low-income patient) factors, which is why the range exists.`,
+    `The range covers only the ${payments.length} hospital${payments.length === 1 ? '' : 's'} with published IME and DSH factors — hospitals without them show no Medicare comparison for this code.`,
     `Does not include capital payment (~5-7% extra) or outlier/UCP add-ons. Negotiated rates above are compared to each hospital's specific Medicare amount.`,
   ].join(' ');
 
@@ -156,7 +161,7 @@ function DrgBanner({ drg }) {
                 {formatPrice(min)} – {formatPrice(max)}
               </div>
               <div className="text-xs text-green-700 mt-0.5">
-                avg {formatPrice(avg)} across {payments.length} hospitals
+                avg {formatPrice(avg)} across {payments.length} hospitals with published factors
               </div>
             </>
           ) : (
@@ -174,7 +179,9 @@ function buildTooltip(medicare, selectedSetting, oppsClass, oppsPayable) {
   ];
   if (oppsPayable) {
     lines.push(
-      `Plus the OPPS Addendum B hospital facility fee for the same code, adjusted to the Austin wage area.`,
+      // Locality comes from the data rather than being hardcoded: these rates
+      // are Austin-localized today, but the string should follow the row.
+      `Plus the OPPS Addendum B hospital facility fee for the same code, adjusted to the ${medicare.locality} wage area.`,
       `This estimates total Medicare payment for an outpatient hospital procedure (physician + facility).`
     );
   } else if (oppsClass === 'packaged') {
