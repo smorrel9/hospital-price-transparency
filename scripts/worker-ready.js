@@ -22,12 +22,12 @@
  *   Options: --min-free-gb N (default 25), --min-speed-pct N (default 50)
  */
 
-import { existsSync, readdirSync, writeFileSync, readFileSync, openSync, writeSync, fsyncSync, closeSync, unlinkSync, statfsSync } from 'fs';
+import { existsSync, readdirSync, writeFileSync, readFileSync, openSync, writeSync, fsyncSync, closeSync, unlinkSync, statfsSync, mkdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { homedir } from 'os';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { REPO_ROOT, RAW_DIR, PARSED_DIR } from './paths.js';
+import { REPO_ROOT, DATA_DIR, RAW_DIR, PARSED_DIR } from './paths.js';
 
 const args = process.argv.slice(2);
 const RECORD = args.includes('--record-baseline');
@@ -63,7 +63,12 @@ function git(...a) {
  * the condition this is meant to detect quickly rather than wait out.
  */
 function measureWriteMbPerSec() {
-  const file = path.join(REPO_ROOT, '.worker-ready-io.tmp');
+  // Probe DATA_DIR, not the repo root: it's the filesystem the pipeline
+  // actually writes multi-GB artifacts to, which is what degrades, and it
+  // keeps a 512MB temp file out of the checkout -- which matters when the
+  // checkout sits on a synced Google Drive folder.
+  mkdirSync(DATA_DIR, { recursive: true });
+  const file = path.join(DATA_DIR, '.worker-ready-io.tmp');
   const block = Buffer.alloc(4 * 1024 * 1024, 7);
   const budgetMs = 5000;
   const capBytes = 512 * 1024 * 1024;

@@ -26,8 +26,18 @@ import { fileURLToPath } from 'url';
 
 export const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export const DB_PATH = process.env.DB_PATH || path.join(REPO_ROOT, 'data', 'prices.db');
-export const DATA_DIR = process.env.DATA_DIR || path.dirname(DB_PATH);
+// Resolved in this order so that setting DATA_DIR alone moves *everything*
+// out of the checkout, database included. Deriving DB_PATH independently would
+// leave prices.db behind in the repo -- a trap when the point of setting
+// DATA_DIR is to keep multi-GB artifacts off a synced Google Drive folder.
+//   neither set    -> <repo>/data  (local default)
+//   DB_PATH only   -> dirname(DB_PATH)  (production: /data/prices.db -> /data)
+//   DATA_DIR only  -> that directory, and the DB inside it
+const DEFAULT_DATA_DIR = path.join(REPO_ROOT, 'data');
+export const DATA_DIR =
+  process.env.DATA_DIR ||
+  (process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : DEFAULT_DATA_DIR);
+export const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'prices.db');
 
 export const RAW_DIR = path.join(DATA_DIR, 'raw');
 export const PARSED_DIR = path.join(DATA_DIR, 'parsed');

@@ -33,6 +33,7 @@
 import { statSync, existsSync, createReadStream, openSync, readSync, closeSync, writeSync, unlinkSync } from 'fs';
 import { createHash } from 'crypto';
 import { execFileSync, spawnSync } from 'child_process';
+import { tmpdir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { DB_PATH, REPO_ROOT } from './paths.js';
@@ -131,7 +132,10 @@ export async function uploadResumable(source, remotePath, chunkBytes = CHUNK) {
   }
   if (already > 0) console.log(`  resuming at ${GB(already)} of ${GB(total)}`);
 
-  const tmpLocal = path.join(REPO_ROOT, '.publish-chunk.tmp');
+  // Staged in the OS temp dir, not the repo: this checkout can live on a synced
+  // Google Drive folder, where a 512MB file created and deleted once per chunk
+  // means Drive uploads and then trashes half a gigabyte ten times per publish.
+  const tmpLocal = path.join(tmpdir(), '.hpt-publish-chunk.tmp');
   const tmpRemote = `${REMOTE_DIR}/.publish-chunk.tmp`;
   const fd = openSync(source, 'r');
   try {
