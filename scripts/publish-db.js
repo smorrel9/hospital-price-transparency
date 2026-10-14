@@ -150,6 +150,13 @@ export async function uploadResumable(source, remotePath, chunkBytes = CHUNK) {
 
       const pct = (((offset + size) / total) * 100).toFixed(1);
       console.log(`  chunk at ${GB(offset)} (+${GB(size)}) -> ${pct}%`);
+      // Clear the staging path *before* the put, not only after a successful
+      // append. `flyctl sftp put` refuses to overwrite an existing remote file
+      // ("doesn't overwrite existing files for safety"), so a chunk that dies
+      // mid-transfer leaves a partial file that blocks every later attempt --
+      // turning a resumable failure into a hard stop. Cost is one round trip
+      // per chunk; it bought a wedged publish on 2026-10-14.
+      fly.ssh(`rm -f ${q(tmpRemote)}`);
       fly.sftpPut(tmpLocal, tmpRemote);
       fly.ssh(`cat ${q(tmpRemote)} >> ${q(remotePath)} && rm -f ${q(tmpRemote)}`);
     }
